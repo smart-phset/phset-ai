@@ -1,0 +1,9 @@
+# Run the AI (bridge.py, webcam.py). Python 3.11.
+# Pinned to the versions on the laptop the model was trained and tested on.
+# The extra index gives the small CPU-only build of torch (no GPU needed).
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.12.1
+torchvision==0.27.1
+ultralytics==8.4.71
+numpy==2.4.4
+opencv-python-headless==4.10.0.84

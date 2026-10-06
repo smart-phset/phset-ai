@@ -1,0 +1,33 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Secrets
+.env
+.env.*
+
+# Datasets (download again with training/train_detector.py)
+data_det/
+data_cls/
+data_raw/
+datasets/
+
+# Run output
+runs/
+bridge_log/
+eval/
+eval_report/
+*.csv
+
+# Base weights Ultralytics downloads on its own (our trained model is models/best.pt)
+yolov8n.pt
+yolov8n-cls.pt
+yolo11n.pt
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

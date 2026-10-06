@@ -45,11 +45,17 @@ backend.
 | `models/best.pt` | The trained model (see [docs/model-card.md](docs/model-card.md)) |
 | `app.py` | A simple browser test page (Gradio). Needs `requirements-extra.txt` |
 | `webcam.py` | Runs the model live on a webcam window |
+| `live_camera.py` | Responsive desktop webcam preview with SmartPhset verdicts, severity and inference metrics |
 | `training/` | Scripts to retrain and evaluate the model (see [docs/training.md](docs/training.md)) |
 | `evidence/` | Accuracy charts, the evaluation report and the threshold check behind the alert levels |
 | `docs/` | How to run it, the API, the model card, retraining |
 
 ## Settings
+
+For laptop/USB webcam detection on Arch Linux, see [docs/live-camera.md](docs/live-camera.md)
+for Python 3.11 setup and GUI OpenCV dependencies. Run `python live_camera.py --cam 0 --conf 0.4 --fps 5`.
+Press **q** or **Ctrl+C** to quit. The preview runs independently of inference and keeps the latest boxes visible.
+`requirements.txt` uses GUI-enabled OpenCV; remove any headless OpenCV installation before installing it.
 
 | Setting | Default | Meaning |
 |---|---|---|
@@ -95,3 +101,7 @@ Branches, the checks before a pull request, how to change the model, and what ne
 - **Training data and the sample photos in `evidence/demo/`:** the oyster-mushroom fruiting-bag contamination
   dataset on Roboflow Universe, CC BY 4.0:
   https://universe.roboflow.com/oyster-mushroom-fruiting-bag/contamination-detection-ozkwx
+
+The live webcam detector can optionally publish structured snapshots to the Spring
+Boot backend on port 9090. See [live camera publishing](docs/live-camera.md#publish-detection-snapshots-to-spring-boot)
+for CLI options, environment keys, nonblocking publishing and local verification.

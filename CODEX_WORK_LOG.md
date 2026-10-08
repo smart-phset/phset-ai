@@ -8,10 +8,10 @@ Current branch:
 `feat/live-camera`
 
 Last verified commit:
-`335f67d547ca025e37562067ab80df78aa86ff0f`
+`bb81eca2f148681ea782b11d9925ffeac357be8a`
 
 Last updated:
-`2026-10-08T16:47:19+07:00`
+2026-10-08T16:59:02.076347+07:00
 
 ## Goal
 
@@ -26,12 +26,12 @@ and SmartPhset verdict behavior.
 - [x] Phase 2 — local Ultralytics provider
 - [x] Phase 3 — Roboflow provider
 - [x] Phase 4 — live-camera integration
-- [ ] Phase 5 — evaluation tooling
+- [x] Phase 5 — evaluation tooling
 - [ ] Phase 6 — documentation and final validation
 
 ## Current phase
 
-Phase 4 — live provider integration COMPLETE. Validation passed; commit/push delivery pending. Phase 5 not started.
+Phase 5 — detector evaluation tooling COMPLETE. Implementation/validation passed; checkpoint commit/push next. Phase 6 not started.
 
 ### Completed in this phase
 
@@ -266,3 +266,74 @@ Intentionally unchanged: BackendPublisher, Spring backend/schema, ESP32/webcam c
 - Commit automatically after passing gates, push origin feat/live-camera, verify remote and clean tree. Do not edit log solely for own SHA.
 - If push fails, preserve local commit and document delivery blocker; do not begin Phase 5.
 - Next phase: Phase 5 — evaluation tooling. At its start read log/Git and record Phase 4 SHA; review plan evaluation requirements, implement tools/evaluate_detector.py and mocked tests for CSV, expected-vs-predicted results and latency metrics. No Phase 5 work in this checkpoint.
+
+
+## Phase 4 delivery blocker — 2026-10-08
+
+Implementation/validation COMPLETE; delivery checkpoint INCOMPLETE.
+
+- Committed exactly live_camera.py, tests/test_live_providers.py, CODEX_WORK_LOG.md with `feat(camera): add selectable AI detection providers`.
+- `git push origin feat/live-camera` failed exit 128: `Could not resolve host: github.com` from this execution environment. No successful push claimed.
+- Working tree clean immediately after commit; this required failure-state record is the only subsequent modification. No source changes after commit and no Phase 5 work.
+- Next exact actions: restore GitHub access for this environment or push existing feat/live-camera from the normal terminal; then reconcile Git and this preserved log modification as normal next-phase work, without a standalone log-only commit. Verify Phase 4 exists on origin before starting Phase 5. Never recreate completed integration.
+
+
+## Phase 5 — detector evaluation tooling
+
+Status: COMPLETE (implementation and validation). Delivery commit/push pending.
+
+### Phase 4 reconciliation
+
+- Read complete work log before edits; inspected git status, branch, log -10, status -sb, remote -v and full pre-existing work-log diff.
+- Verified HEAD and recorded origin/feat/live-camera are bb81eca2f148681ea782b11d9925ffeac357be8a (`feat(camera): add selectable AI detection providers`); merge-base ancestry check passed. User confirmed successful external push. Only expected CODEX_WORK_LOG.md push-blocker note was modified before Phase 5.
+- Preserve historical Phase 4 blocker note above, now resolved by user's external push and matching origin reference. Reconciliation is included here as normal Phase 5 work, never a standalone log commit. No independent fresh remote request is claimed.
+
+### Research performed (2026-10-08)
+
+- Reviewed actual detector contracts/providers, verdict function/factory, installed OpenCV API, existing test suite, plan evaluation section and .gitignore before implementation.
+- https://docs.opencv.org/4.x/d4/da8/group__imgcodecs.html (current official page redirects to 4.13.0): imread accepts filename/flags, color decode is BGR, unreadable data returns empty output. Verified installed cv2 4.10.0 exposes imread(filename[, flags]); use existing IMREAD_COLOR, not a newer-only flag. Real temporary PNG fixture decoded successfully in test. No upgrade needed.
+- https://docs.python.org/3.11/library/csv.html: DictWriter with explicit fieldnames and newline='' for CSV output.
+- https://docs.python.org/3.11/library/statistics.html: mean for successful latencies. Chose explicitly documented nearest-rank p95 instead of quantiles interpolation/extrapolation for small datasets; handles singleton and zero samples deterministically.
+- No new SDK/API/auth changes: reuse Phase 3 installed SDK 1.7.3 verification and existing provider. No live requests, pricing or model-quality verification in this phase. Existing dependency versions remain fixed; no new dependency requires latest-release selection.
+
+### Implementation decisions / scoring policy
+
+- tools/evaluate_detector.py supports script and module execution, --dataset/--data, --output CSV, --model-provider local|roboflow and existing weights/conf/imgsz/device/model-ID/API-URL configuration. Reuses build_detector and summarize_detections, never duplicates provider inference or verdict thresholds.
+- Require all three labeled category directories; recursive discovery within them, deterministic relative-path sort. Explicit case-insensitive JPG/JPEG/PNG/BMP/TIF/TIFF/WEBP only. CSV can never be discovered as an image. Missing directories are clear configuration failures. Empty complete dataset emits null metrics and header-only CSV without loading provider.
+- Sequential detect once per readable image, no concurrent calls, queues or application retries; SDK internal retries remain. Detector closes in finally. Hosted evaluation uses existing environment key and can incur hosted usage when explicitly invoked on real images.
+- Contaminated correct ONLY for contamination_suspected with RED/AMBER. GREY contamination counts as a miss and a distinct low_confidence_contamination_miss. Other contaminated outcomes are misses. Healthy correct ONLY no_contamination_seen/GREEN; any contamination verdict is a healthy false alert. Negative correct ONLY no_detection/GREY; Healthy GREEN is a false claim and any contamination verdict is a negative contamination false alert, including low-confidence GREY.
+- Errors/unreadable/malformed output remain GREY/unavailable, blank correctness/latency, excluded from accuracy/latency and successful miss/false-alert counts. Availability is separately prominent; unavailable contaminated images must be reviewed in addition to misses. Validate normalized boxes/finite confidence/coordinates/latency before verdict calculation so malformed output cannot generate fake GREEN.
+- Report counts, accuracy among successful inspections, misses, low-confidence misses, healthy false alerts, negative false claims/contamination alerts, successful no_detection count, mean latency and nearest-rank p95. No samples -> null accuracy/latencies. Provider timing excludes file decode and includes provider work; no warmup exclusion. Detailed CSV retains unrounded confidence and provider/model identity. Exception text omitted to prevent accidental secret leakage.
+- .gitignore already ignores *.csv; verified git check-ignore evaluation-results-local.csv. No ignore change or generated output committed.
+- Plan example uses --provider/--model-id; final tool follows user's required --model-provider/--roboflow-model-id shared live configuration, with --data retained as dataset alias.
+
+### Files created / modified
+
+Created: tools/evaluate_detector.py; tests/test_evaluate_detector.py; docs/evaluation.md (commands, exact scoring and statistical definitions/limitations).
+Modified: CODEX_WORK_LOG.md, including preserved Phase 4 blocker reconciliation.
+Dependency/version changes: NONE. Camera, BackendPublisher/backend, provider implementations, models/best.pt, verdict thresholds, existing tests and .gitignore intentionally unchanged. No training/frontend/backend work.
+
+### Tests / compatibility results
+
+- `.venv/bin/python -m unittest discover -s tests -p test_evaluate_detector.py -q`: PASS 19 tests, 0.071s.
+- `.venv/bin/python -m unittest discover -s tests -q`: PASS 81 tests, 1.282s (all previous 62 retained).
+- `.venv/bin/python -m compileall -q tools tests detectors live_camera.py backend_publisher.py bridge.py`: PASS.
+- `git diff --check`: PASS; rerun on completed log before staging.
+- `UV_CACHE_DIR=/tmp/smartphset-uv-cache uv pip check --python .venv/bin/python`: PASS, 58 compatible packages.
+- `.venv/bin/python tools/evaluate_detector.py --help`: PASS, no model/key/network needed.
+- Safe fixture CLI test: temporary actual PNG written/read by installed cv2, local detector mocked, CSV correct=True verified and detector closed. Empty dataset fixture also verified no provider construction. No real local inference or live hosted request.
+- Test coverage: discovery/determinism/extensions, required folders, all requested scoring outcomes, low-confidence miss, unknown labels, safe provider failure/continuation, unreadable/invalid result, mean and p95 incl singleton/empty, CSV schema/precision, local/hosted factory selection and CLI/cleanup. Socket connection blocked in evaluation tests.
+
+### Known issues / real data / current state
+
+- No evaluation/ directory or real evaluation images exist in repository. No real dataset evaluated and no model-quality metrics manufactured. Synthetic tests demonstrate implementation correctness only. Image-level scoring is not box-level mAP or production acceptance; representative held-out data is required. Confidence filtering may remove boxes upstream; compare providers under documented identical settings.
+- Current branch feat/live-camera; previous SHA bb81eca2f148681ea782b11d9925ffeac357be8a. Intended status: M CODEX_WORK_LOG.md; ?? tools/evaluate_detector.py; ?? tests/test_evaluate_detector.py; ?? docs/evaluation.md. All validation passed; no implementation blockers.
+- GitHub DNS has failed in prior tool sessions despite successful external pushes. Attempt normal push after commit; record actual result and do not start Phase 6 on failure.
+
+### Exact commit / next actions
+
+1. Review intended full diff/status, stage ONLY tools/evaluate_detector.py, tests/test_evaluate_detector.py, docs/evaluation.md, CODEX_WORK_LOG.md.
+2. Commit `feat(ai): add detector evaluation workflow`; push origin feat/live-camera; verify push and clean Git. Report SHA in chat, no post-commit SHA-only edit.
+3. If push fails, preserve validated local commit and record delivery blocker. Wait for network/external push before Phase 6.
+4. Phase 6 — documentation and final validation: reconcile Git/previous SHA; update docs/live-camera.md for webcam/local, ESP32/local, ESP32/Roboflow, keys, failures, throttling and cleanup. Create docs/model-integration.md with model/source/classes/CC BY 4.0 attribution, current deployment/confidence, evaluation procedure/results explicitly not yet measured. Link evaluator documentation from README as useful; no accuracy claims without real data.
+5. Run final full tests, syntax, CLI help/diff/uv compatibility gates and provide manual camera/backend/evaluation commands. Do not invoke real paid inference without a separately intentional manual run. Phase 6 not started in this checkpoint.

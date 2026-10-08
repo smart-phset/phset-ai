@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Live SmartPhset YOLO detection from webcam or network video stream."""
+"""Live SmartPhset detection from webcam or network video stream."""
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
@@ -244,6 +244,32 @@ def open_video_source(cv2, args):
     return camera, source_name
 
 
+def build_detector(args, model_factory=None):
+    """Construct only the selected provider; hosted mode needs no local weights."""
+    if args.model_provider == "local":
+        weights = Path(args.weights)
+        if not weights.is_file():
+            raise FileNotFoundError(f"Weights not found: {weights}")
+        print(f"Loading YOLO model: {weights}")
+        return LocalUltralyticsDetector(
+            str(weights), args.conf, args.device, args.imgsz,
+            model_factory=model_factory,
+        )
+    if args.model_provider == "roboflow":
+        if not os.environ.get("ROBOFLOW_API_KEY", "").strip():
+            raise ValueError("ROBOFLOW_API_KEY is required for the Roboflow provider")
+        from detectors.roboflow_detector import RoboflowDetector
+        return RoboflowDetector(model_id=args.roboflow_model_id,
+                                api_url=args.roboflow_api_url, confidence=args.conf)
+    raise ValueError("Unknown model provider")
+
+
+def unavailable_summary(frame):
+    summary = summarize_detections([])
+    summary["shape"] = frame.shape[:2]
+    return summary
+
+
 def run_camera(
     args,
     cv2_module=None,
@@ -260,23 +286,11 @@ def run_camera(
     camera = None
     executor = None
     publisher = None
+    detector = None
+    hosted = args.model_provider == "roboflow"
 
     try:
-        weights = Path(args.weights)
-
-        if not weights.is_file():
-            raise FileNotFoundError(
-                f"Weights not found: {weights}"
-            )
-
-        print(
-            f"Loading YOLO model: {weights}"
-        )
-
-        detector = LocalUltralyticsDetector(
-            str(weights), args.conf, args.device,
-            model_factory=model_factory,
-        )
+        detector = build_detector(args, model_factory)
 
         camera, camera_name = (
             open_video_source(
@@ -321,6 +335,9 @@ def run_camera(
         next_inference = 0.0
         last_completed = None
         ai_fps = 0.0
+        submitted_at = None
+        result_frame_time = None
+        stale_after = max(5.0, 2.0 / args.fps)
 
         print()
         print(
@@ -390,15 +407,30 @@ def run_camera(
             now = time.monotonic()
 
             # ---------------------------------
-            # Collect completed YOLO inference
+            # Collect completed provider inference
             # ---------------------------------
             if (
                 pending is not None
                 and pending.done()
             ):
-                summary = pending.result()
-
+                try:
+                    summary = pending.result()
+                    result_frame_time = submitted_at
+                except Exception as exc:
+                    # Only expected hosted failures are recoverable here.
+                    # Never print exception details that could contain credentials.
+                    if not hosted:
+                        raise
+                    from detectors.roboflow_detector import DetectorUnavailableError
+                    if not isinstance(exc, DetectorUnavailableError):
+                        raise
+                    summary = unavailable_summary(frame)
+                    result_frame_time = None
+                    print("AI provider unavailable; retrying on schedule.")
                 pending = None
+                if hosted and result_frame_time is not None and now - result_frame_time > stale_after:
+                    summary = unavailable_summary(frame)
+                    result_frame_time = None
 
                 if last_completed is not None:
                     ai_fps = (
@@ -418,13 +450,20 @@ def run_camera(
                         now,
                     )
 
+            if hosted and result_frame_time is not None and now - result_frame_time > stale_after:
+                summary = unavailable_summary(frame)
+                result_frame_time = None
+                if publisher.url:
+                    publisher.offer(summary, camera_name, now)
+
             # ---------------------------------
-            # Start next YOLO inference
+            # Start next provider inference
             # ---------------------------------
             if (
                 pending is None
                 and now >= next_inference
             ):
+                submitted_at = now
                 pending = executor.submit(
                     infer_detector,
                     detector,
@@ -487,11 +526,12 @@ def run_camera(
                 cv2.destroyAllWindows()
 
             finally:
-                if executor is not None:
-                    executor.shutdown(
-                        wait=True,
-                        cancel_futures=True,
-                    )
+                try:
+                    if executor is not None:
+                        executor.shutdown(wait=True, cancel_futures=True)
+                finally:
+                    if detector is not None:
+                        detector.close()
 
 
 def parse_args(argv=None):
@@ -499,6 +539,11 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description=__doc__
     )
+
+    parser.add_argument("--model-provider", choices=("local", "roboflow"), default="local")
+    parser.add_argument("--roboflow-model-id", default="contamination-detection-ozkwx/1")
+    parser.add_argument("--roboflow-api-url", default="https://serverless.roboflow.com")
+    parser.add_argument("--imgsz", type=int, default=416)
 
     parser.add_argument(
         "--cam",
@@ -582,6 +627,15 @@ def parse_args(argv=None):
     )
 
     args = parser.parse_args(argv)
+    if args.imgsz <= 0:
+        parser.error("--imgsz must be greater than zero")
+    if not args.roboflow_model_id.strip():
+        parser.error("--roboflow-model-id must not be empty")
+    from urllib.parse import urlsplit
+    endpoint = urlsplit(args.roboflow_api_url)
+    if (endpoint.scheme not in ("http", "https") or not endpoint.netloc
+            or endpoint.username or endpoint.password or endpoint.query or endpoint.fragment):
+        parser.error("--roboflow-api-url must be HTTP(S) without credentials, query or fragment")
 
     if (
         not math.isfinite(
@@ -658,6 +712,7 @@ def main():
         RuntimeError,
         OSError,
         ImportError,
+        ValueError,
     ) as exc:
 
         raise SystemExit(

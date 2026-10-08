@@ -8,7 +8,7 @@ Current branch:
 `feat/live-camera`
 
 Last verified commit:
-`f2aaf30e8a3b1f832f32a156dc798c7f879c173d`
+`335f67d547ca025e37562067ab80df78aa86ff0f`
 
 Last updated:
 `2026-10-08T16:47:19+07:00`
@@ -25,13 +25,13 @@ and SmartPhset verdict behavior.
 - [x] Phase 1 — detector abstractions
 - [x] Phase 2 — local Ultralytics provider
 - [x] Phase 3 — Roboflow provider
-- [ ] Phase 4 — live-camera integration
+- [x] Phase 4 — live-camera integration
 - [ ] Phase 5 — evaluation tooling
 - [ ] Phase 6 — documentation and final validation
 
 ## Current phase
 
-Phase 3 — Roboflow provider COMPLETE. All installation/API/test/compatibility gates passed. Phase 4 NOT started; begin only after successful commit/push and clean tree.
+Phase 4 — live provider integration COMPLETE. Validation passed; commit/push delivery pending. Phase 5 not started.
 
 ### Completed in this phase
 
@@ -204,3 +204,65 @@ Before implementing any phase depending on an external library, SDK, API, model 
 6. Record research date, official sources checked, verified version/API, differences from the plan, and resulting implementation decision in this log.
 7. If docs are ambiguous, inspect installed package API or official source before implementation.
 8. Never claim verification without actually checking.
+
+## Phase 3 delivery blocker — 2026-10-08
+
+Phase 3 implementation and all validation gates are COMPLETE. Delivery checkpoint is incomplete: push failed.
+
+- Intended four files were committed locally with message `feat(ai): add Roboflow mushroom detection provider`.
+- `git push origin feat/live-camera` failed with exit 128: `Could not resolve host: github.com`.
+- Remote: https://github.com/smart-phset/phset-ai.git. Branch feat/live-camera is ahead of the locally recorded origin branch by two commits (Phase 2 and Phase 3). Remote state cannot be verified until network access is restored.
+- Working tree was clean immediately after the failed push. Only this required blocker record now modifies CODEX_WORK_LOG.md. This edit documents a delivery failure, not a post-commit SHA-only update.
+- No source/dependency changes after the validated Phase 3 commit. No Phase 4 implementation started.
+- Next exact actions: restore GitHub DNS/network access in this execution environment; read this log and inspect Git; retry pushing the existing commits without recreating Phase 3. Verify remote tip. Reconcile this blocker-log change as normal Phase 4 work, record previous checkpoint SHA there, and then begin Phase 4. Do not claim a clean delivered checkpoint until push succeeds.
+
+
+## Phase 4 — live provider integration
+
+Status: COMPLETE (implementation/validation); checkpoint commit/push next.
+Research date: 2026-10-08.
+
+### Git reconciliation
+
+- Read this entire log first. Inspected status, branch, recent log, status -sb and remotes before source edits.
+- Previous checkpoint SHA: 335f67d547ca025e37562067ab80df78aa86ff0f (`feat(ai): add Roboflow mushroom detection provider`). User successfully pushed it from their terminal.
+- Local HEAD and recorded origin/feat/live-camera match that SHA; merge-base ancestry checks confirm both Phase 2 f2aaf30 and Phase 3 are contained in origin/feat/live-camera. Only the expected blocker work-log modification existed.
+- Direct `git ls-remote` from this execution environment still fails GitHub DNS, so current remote verification is limited to the updated origin reference and user-confirmed push. Historical Phase 3 delivery-blocker section above is resolved by that push, preserved as history. Its existing modification is included in normal Phase 4 work; no standalone log commit.
+
+### Research performed / decisions
+
+- Reviewed integration plan, entire live_camera.py, detector contracts/providers, BackendPublisher and all existing camera/publisher tests. Reused verified installed SDK 1.7.3 API and official source research recorded above; no SDK changes needed.
+- https://docs.python.org/3.11/library/concurrent.futures.html checked current Python 3.11 docs: Future.done enables nonblocking collection; result rethrows worker errors; shutdown(cancel_futures=True) cancels queued work but waits for running work. Preserve one worker and never submit while pending.
+- https://docs.opencv.org/4.x/d8/dfe/classcv_1_1VideoCapture.html checked official current docs (redirect to 4.13.0): integer camera and stream URL inputs, read, release and set remain supported. Keep installed 4.10.0.84; no new capture API or upgrade required.
+- SDK documentation URL now redirects; exact installed SDK behavior remains covered by Phase 3 installed-client mocked-transport tests. No new hosted pricing/version claim or live request made.
+- Factory lazily imports hosted provider only when selected; local default requires no key/SDK. Remote validates key before model/camera use and requires no weights. New CLI selects local/roboflow and hosted model/endpoint; --imgsz exposes existing 416 default. Preserve conf/device/weights/fps/source/cam/reconnect/backend options, default FPS 5 and all thresholds/wording. Recommended hosted invocation explicitly uses --fps 1; do not change local defaults.
+- Hosted DetectorUnavailableError yields GREY / Could not inspect, empty boxes/counts and unchanged backend schema; no exception details logged, no fallback, no camera reconnect. Subsequent requests follow existing schedule; frames while busy are dropped. Unexpected programming errors and local inference failures retain existing propagation.
+- Hosted successful detections expire after max(5 seconds, two requested inference intervals), measured from frame submission, including delayed results already stale on arrival. Expiry publishes GREY once through existing publisher. Local display persistence is unchanged. No new stale timestamp presented as a successful inspection.
+- Detector close now runs after executor shutdown alongside existing camera/window/publisher cleanup. Hosted worker shutdown still waits for the provider's existing bounded async deadline; synchronous encoding/capture calls are not preemptible.
+
+### Files / dependency changes
+
+Created: tests/test_live_providers.py (10 mocked integration/factory tests).
+Modified: live_camera.py; CODEX_WORK_LOG.md (including preserved blocker reconciliation).
+Dependency/version changes: NONE.
+Intentionally unchanged: BackendPublisher, Spring backend/schema, ESP32/webcam capture/reconnect/buffer setting, local provider, Roboflow provider, models/best.pt, severity thresholds, existing verdict wording, protected packages, existing tests.
+
+### Validation results
+
+- `.venv/bin/python -m unittest discover -s tests -p test_live_providers.py -q`: PASS 10 tests, 0.072s.
+- `.venv/bin/python -m unittest discover -s tests -q`: PASS 62 tests, 1.407s (all prior 52 retained).
+- `.venv/bin/python -m compileall -q detectors tests live_camera.py backend_publisher.py bridge.py`: PASS.
+- `git diff --check`: PASS (rerun after final log edit before staging).
+- `UV_CACHE_DIR=/tmp/smartphset-uv-cache uv pip check --python .venv/bin/python`: PASS 58 compatible packages.
+- Imports inference_sdk/numpy/requests/ultralytics/torch/torchvision/cv2: PASS.
+- Installed: inference-sdk 1.7.3, numpy 2.3.5, requests 2.34.2, ultralytics 8.4.71, torch 2.12.1+cpu, torchvision 0.27.1+cpu, opencv-python 4.10.0.84.
+- Coverage: local default/explicit and no hosted imports/key; hosted configuration without weights; missing key; CLI validation; exact provider/backend payload equivalence; failure GREY + scheduled recovery/no reconnect; one pending inference; stale/slow successful results; real camera read-failure reconnect; q and Ctrl+C resource cleanup. No live/paid requests.
+
+### Known issues / next exact actions
+
+- No hardware GUI/ESP32 or real hosted/backend manual test performed; acceptance with real grow-room imagery remains later manual validation/evaluation. Direct GitHub DNS in this tool environment remains unavailable as of reconciliation; attempt push after commit and record actual result.
+- Current Git intended changes: M CODEX_WORK_LOG.md, M live_camera.py, ?? tests/test_live_providers.py. Branch feat/live-camera; previous checkpoint SHA above. Stage ONLY those three files after reviewing diff/status.
+- Exact commit message: `feat(camera): add selectable AI detection providers`.
+- Commit automatically after passing gates, push origin feat/live-camera, verify remote and clean tree. Do not edit log solely for own SHA.
+- If push fails, preserve local commit and document delivery blocker; do not begin Phase 5.
+- Next phase: Phase 5 — evaluation tooling. At its start read log/Git and record Phase 4 SHA; review plan evaluation requirements, implement tools/evaluate_detector.py and mocked tests for CSV, expected-vs-predicted results and latency metrics. No Phase 5 work in this checkpoint.

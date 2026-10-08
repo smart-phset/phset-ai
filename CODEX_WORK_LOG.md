@@ -8,10 +8,10 @@ Current branch:
 `feat/live-camera`
 
 Last verified commit:
-`105f9ab5c38f2dd617c27755436c1d207bc60d09`
+`8a1f7b3c1099a574d4cd8956f1febbf87adfb3fb`
 
 Last updated:
-`2026-10-08T16:08:11+07:00`
+`2026-10-08T16:11:30+07:00`
 
 ## Goal
 
@@ -82,7 +82,7 @@ Earlier pip-check attempt was inapplicable: this project uses uv, and missing pi
 
 - Read this file before any implementation work in every new Codex session.
 - Do not redo completed phases unless repository state proves they are missing/broken.
-- Preserve current uncommitted network-camera implementation: --source, --reconnect-delay, esp32-cam publishing identity, one inference worker, responsive preview, q/Ctrl+C cleanup.
+- Preserve the committed baseline network-camera implementation: --source, --reconnect-delay, esp32-cam publishing identity, one inference worker, responsive preview, q/Ctrl+C cleanup.
 - Preserve current contamination-first severity thresholds: >=0.80 RED, >=0.40 AMBER, lower contamination GREY; explicit healthy only GREEN; unknown/empty GREY.
 - BackendPublisher uses camera_id (not camera) in POST JSON, first/periodic/state-change publishing, bounded pending work, 3-second socket timeout.
 - Keep actual installed/pinned Ultralytics 8.4.71; Python 3.11.17, torch 2.12.1+cpu, torchvision 0.27.1+cpu, numpy 2.4.4, opencv-python 4.10.0.84. inference-sdk is not installed.
@@ -101,38 +101,50 @@ Earlier pip-check attempt was inapplicable: this project uses uv, and missing pi
 ### Current Git state
 
 ```text
- M bridge.py
- M live_camera.py
-?? CODEX_WORK_LOG.md
+ M CODEX_WORK_LOG.md
 ```
 
-Branch: feat/live-camera (up to date with origin/feat/live-camera at inspection).
-Last commit: 105f9ab5c38f2dd617c27755436c1d207bc60d09.
-Earlier commit: 4da40f0 Initial commit.
-Pre-existing diff: 2 files, 607 insertions and 92 deletions; preserve unchanged.
+Branch: feat/live-camera, ahead of origin/feat/live-camera by 1 commit. No push performed.
+Last commit: 8a1f7b3c1099a574d4cd8956f1febbf87adfb3fb.
+Baseline checkpoint COMPLETE: the approved commit contains exactly bridge.py, live_camera.py, and CODEX_WORK_LOG.md.
+Source files were not modified further; source hashes still match the inspected baseline.
+Only this work log is modified: baseline completion/SHA/next-phase updates plus the user-requested checkpoint workflow revision. A log-only sync commit is proposed and awaits approval. Source code is unchanged. git diff --check passes; source tests are not rerun for this documentation-only change.
+Previous commits: 105f9ab add live detection and backend snapshot publishing; 4da40f0 Initial commit.
 
 ### Next exact actions
 
-1. Stop before committing; show the three-file clean-baseline summary and request explicit approval. Phase 1 must remain unstarted.
-2. On approval, re-read this complete log, run git status/branch/log, and verify no unexpected changes.
-3. Commit only bridge.py, live_camera.py, and CODEX_WORK_LOG.md together using the message below. Record and report the resulting SHA in the log; do not push. Stop after the commit unless the user also authorizes continuing.
-4. Start Phase 1 only when the user authorizes continuing: add detectors/__init__.py, types.py, base.py, initial provider-neutral verdict refactor, and normalized-type/verdict tests.
-5. Run relevant and existing tests, update this log, and stop before the Phase 1 checkpoint commit.
+1. Stop before the proposed log-only commit and request explicit approval. Phase 1 has NOT started.
+2. On approval, re-read this log, run git status and inspect the diff; stage and commit only CODEX_WORK_LOG.md with `docs(ai): sync baseline work log`.
+3. After that commit, report its SHA and git status in chat. Do not edit this log merely to insert that commit's own SHA; do not push or start Phase 1.
+4. At the beginning of Phase 1, once explicitly authorized, read this log and inspect git status/branch/log. Record the previous checkpoint SHA as part of Phase 1's normal log changes.
+5. Phase 1: add detectors/__init__.py, types.py, base.py, initial provider-neutral verdict refactor, and normalized-type/verdict tests. Preserve the completed baseline; do not redo it.
+6. Run relevant and existing tests, update this log, and stop before the Phase 1 checkpoint commit.
 
 ## Commit checkpoint
 
-Commit required: YES (ONE clean-baseline commit containing bridge.py, live_camera.py, and CODEX_WORK_LOG.md)
+Baseline checkpoint: COMPLETE, approved and committed as 8a1f7b3c1099a574d4cd8956f1febbf87adfb3fb.
+
+Commit required: YES — log-only baseline sync; exactly CODEX_WORK_LOG.md.
 
 Suggested commit message:
 
 ```text
-feat(camera): add ESP32-CAM live stream support
+docs(ai): sync baseline work log
 ```
 
-Commit approved by user: NO
+Commit approved by user: NO (approval pending for this log-only commit).
 
 Commit SHA:
-`PENDING`
+`PENDING — report in chat after approval; record at the beginning of the next phase.`
+
+## Checkpoint workflow — user revision
+
+This workflow supersedes the plan's instruction to update the log with a checkpoint's own SHA immediately after committing.
+
+- Before each checkpoint commit, record the completed phase, tests/results, files changed, Git state, and exact next actions in this log; include it in that commit.
+- After committing, report the SHA and final Git status in chat. Do not edit this log solely to insert that commit's own SHA.
+- At the beginning of the NEXT authorized phase, inspect git log and record the previous checkpoint SHA as part of that phase's normal work.
+- Each checkpoint should end with a clean working tree. Commit approval remains mandatory. Do not push without explicit authorization.
 
 ## Resume instructions
 

@@ -5,12 +5,12 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor
 import math
 import os
-from datetime import datetime, timezone
 from pathlib import Path
 import time
 
 from backend_publisher import BackendPublisher
 from detectors.types import DetectionBox
+from detectors.local_ultralytics import LocalUltralyticsDetector
 
 
 DEFAULT_WEIGHTS = str(
@@ -89,37 +89,20 @@ def summarize_detections(boxes: list[DetectionBox]) -> dict:
 
 
 def infer(model, frame, args):
-    captured_at = (
-        datetime.now(timezone.utc)
-        .isoformat()
-        .replace("+00:00", "Z")
+    """Compatibility entry point for callers supplying an already-loaded YOLO."""
+    detector = LocalUltralyticsDetector(
+        args.weights, args.conf, args.device,
+        model_factory=lambda weights: model,
     )
+    return infer_detector(detector, frame)
 
-    start = time.monotonic()
 
-    options = {
-        "conf": args.conf,
-        "imgsz": 416,
-        "verbose": False,
-    }
-
-    if args.device is not None:
-        options["device"] = args.device
-
-    result = model.predict(
-        frame,
-        **options,
-    )[0]
-
-    summary = summarize_result(result)
-
-    summary["ms"] = (
-        time.monotonic() - start
-    ) * 1000
-
+def infer_detector(detector, frame):
+    result = detector.detect(frame)
+    summary = summarize_detections(result.boxes)
+    summary["ms"] = result.inference_ms
     summary["shape"] = frame.shape[:2]
-    summary["captured_at"] = captured_at
-
+    summary["captured_at"] = result.captured_at
     return summary
 
 
@@ -272,11 +255,6 @@ def run_camera(
     if cv2_module is None:
         import cv2 as cv2_module
 
-    if model_factory is None:
-        from ultralytics import YOLO
-
-        model_factory = YOLO
-
     cv2 = cv2_module
 
     camera = None
@@ -295,8 +273,9 @@ def run_camera(
             f"Loading YOLO model: {weights}"
         )
 
-        model = model_factory(
-            str(weights)
+        detector = LocalUltralyticsDetector(
+            str(weights), args.conf, args.device,
+            model_factory=model_factory,
         )
 
         camera, camera_name = (
@@ -447,10 +426,9 @@ def run_camera(
                 and now >= next_inference
             ):
                 pending = executor.submit(
-                    infer,
-                    model,
+                    infer_detector,
+                    detector,
                     frame.copy(),
-                    args,
                 )
 
                 next_inference = (

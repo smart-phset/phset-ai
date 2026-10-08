@@ -8,10 +8,10 @@ Current branch:
 `feat/live-camera`
 
 Last verified commit:
-`696960153d8e276fbdfe90181fe4db1641abf341`
+`f5cbf5e2c07e454b7d00992b7f8666bbf14cee61`
 
 Last updated:
-`2026-10-08T16:16:58+07:00`
+`2026-10-08T16:24:08+07:00`
 
 ## Goal
 
@@ -23,7 +23,7 @@ and SmartPhset verdict behavior.
 
 - [x] Phase 0 — repository inspection
 - [x] Phase 1 — detector abstractions
-- [ ] Phase 2 — local Ultralytics provider
+- [x] Phase 2 — local Ultralytics provider
 - [ ] Phase 3 — Roboflow provider
 - [ ] Phase 4 — live-camera integration
 - [ ] Phase 5 — evaluation tooling
@@ -31,37 +31,35 @@ and SmartPhset verdict behavior.
 
 ## Current phase
 
-Phase 1 — detector abstractions COMPLETE; awaiting commit approval.
+Phase 2 — local Ultralytics provider COMPLETE; awaiting user-created commit.
 
 ### Completed in this phase
 
-- Read the previous work log completely and verified clean working tree, branch feat/live-camera, and HEAD 696960153d8e276fbdfe90181fe4db1641abf341 (`docs(ai): sync baseline work log`) before edits.
-- Reconciled the previous log's pending checkpoint text against Git: log-only sync was approved and committed. Recorded its SHA as part of normal Phase 1 work.
-- Added DetectionBox, DetectionResult, and the abstract Detector contract.
-- Added summarize_detections for normalized boxes; retained summarize_result as a compatibility adapter for existing YOLO callers.
-- Added focused type/interface, threshold, unrounded confidence, unknown/empty, mixed-class, prefix-policy, and compatibility tests.
-- Completed only Phase 1; no local/Roboflow provider, SDK dependency, factory, camera integration, or evaluation tooling added.
+- Read the previous log fully before editing. Verified project SmartPhset-AI, origin https://github.com/smart-phset/phset-ai.git, branch feat/live-camera, clean tree, and local HEAD equal to the recorded origin/feat/live-camera ref.
+- Reconciled Phase 1 as committed and pushed by the user: f5cbf5e2c07e454b7d00992b7f8666bbf14cee61 (`refactor(ai): introduce provider-neutral detection interface`). Recorded this previous checkpoint SHA in normal Phase 2 work. No fetch was performed; origin state refers to the locally recorded remote-tracking ref.
+- Added LocalUltralyticsDetector implementing Detector, loading YOLO once and returning normalized DetectionResult.
+- Routed the live camera's existing single inference worker through the local provider and provider-neutral summary conversion.
+- Added mocked tests for single loading, prediction options, custom imgsz/conf/device, normalized labels, unrounded confidence, original-frame coordinates, metadata, empty/absent boxes, backend-compatible summary, and propagated inference failure.
+- No Phase 3 work, provider-selection CLI, SDK dependency, model weight changes, or dependency upgrades.
 
 ### Files created
 
-- detectors/__init__.py
-- detectors/types.py
-- detectors/base.py
-- tests/test_detector_types.py
+- detectors/local_ultralytics.py
+- tests/test_local_ultralytics_detector.py
 
 ### Files modified
 
-- live_camera.py — only type import, compatibility conversion, and provider-neutral verdict logic.
-- CODEX_WORK_LOG.md — previous checkpoint reconciliation, Phase 1 results, and resume actions.
+- live_camera.py
+- CODEX_WORK_LOG.md
 
 ### Tests run
 
 ```text
-.venv/bin/python -m unittest discover -s tests -p test_detector_types.py -v
-PASS: 10 focused tests, 0.001s.
+.venv/bin/python -m unittest discover -s tests -p test_local_ultralytics_detector.py -v
+PASS: 6 focused tests, 0.009s.
 .venv/bin/python -m unittest discover -s tests -v
-PASS: 33 tests, 0.063s (all 23 existing tests plus 10 new tests).
-.venv/bin/python -m py_compile detectors/__init__.py detectors/types.py detectors/base.py live_camera.py tests/test_detector_types.py
+PASS: 39 tests, 0.082s, including all 33 previous tests.
+.venv/bin/python -m py_compile detectors/local_ultralytics.py live_camera.py tests/test_local_ultralytics_detector.py
 PASS.
 git diff --check
 PASS.
@@ -69,71 +67,66 @@ PASS.
 
 ### Important implementation decisions
 
-- DetectionBox is frozen and lowercases labels at construction; confidence and original-frame coordinates remain unrounded.
-- DetectionResult uses an independent default boxes list and retains timing, captured_at, provider, and model_id fields.
-- Detector.detect accepts a BGR numpy frame; numpy is imported only for type checking so contract imports stay independent of model/numpy runtime dependencies. close defaults to a no-op.
-- Verdict policy remains in live_camera.summarize_detections and consumes only normalized DetectionBox objects. Prefix matching, counts, maxima, messages, thresholds, and output JSON are preserved.
-- summarize_result handles None/absent boxes and converts YOLO output into normalized boxes before delegating. Returned xyxy values remain JSON lists and confidence is never rounded.
-- Camera loop, infer scheduling/options, ESP32 reconnect, preview, BackendPublisher, bridge.py, dependencies, and models/best.pt are unchanged.
-- Keep pinned Ultralytics 8.4.71. Use uv, not pip installation, for future dependency operations.
-- Baseline source work is complete in 8a1f7b3c1099a574d4cd8956f1febbf87adfb3fb; do not redo it.
+- Lazy Ultralytics import and optional model_factory test hook avoid real model loading in tests. Existing installed/pinned Ultralytics 8.4.71 is unchanged.
+- Provider constructor accepts weights, confidence, optional device, and imgsz (default 416). Only configured device is sent to predict; verbose=False remains unchanged.
+- detect returns lowercase labels, full floating-point confidence/xyxy, UTC Z captured_at at inference start, measured inference_ms, provider=local, and model_id equal to the weights path.
+- run_camera constructs one detector; the existing single executor submits infer_detector with a copied frame, preserving scheduling and queue behavior.
+- infer(model, frame, args) remains a compatibility entry point wrapping the already-loaded model through the same provider; it does not reload weights. The live loop uses infer_detector directly.
+- Summary retains the existing backend fields and JSON box lists; no provider metadata is injected into the backend schema.
+- Existing webcam/network opening, reconnect, publishing, thresholds, and q/Ctrl+C cleanup are unchanged. Local provider inherits the no-op close because no additional resources are owned.
+- Use uv-compatible dependency commands. No dependency operation was needed in Phase 2.
 
 ### Known issues / blockers
 
-- No Phase 1 blockers.
-- Existing tests do not directly cover network reconnect/hardware; add camera integration coverage in Phase 4.
-- Current model inference errors still terminate preview; remote failure recovery belongs to Phase 4.
-- Hardware/GUI and real model quality have not been exercised in this phase. Tests use mocked camera/model/HTTP and no live Roboflow calls.
+- No Phase 2 blockers.
+- Hardware/GUI/real model inference have not been exercised; these tests are mocked and make no live Roboflow calls.
+- Network reconnect still lacks direct automated coverage; preserve baseline code and add coverage during Phase 4.
+- Current model failure propagation is unchanged; hosted-service recovery belongs to Phase 4.
 
 ### Current Git state
 
 ```text
  M CODEX_WORK_LOG.md
  M live_camera.py
-?? detectors/
-?? tests/test_detector_types.py
+?? detectors/local_ultralytics.py
+?? tests/test_local_ultralytics_detector.py
 ```
 
-Branch: feat/live-camera, ahead of origin/feat/live-camera by 2 commits; no push performed.
-Last verified commit / previous checkpoint: 696960153d8e276fbdfe90181fe4db1641abf341.
-No changes staged. Exactly six files are intended for the Phase 1 commit (the four created and two modified above).
+Project: SmartPhset-AI. Repository: phset-ai. Branch: feat/live-camera.
+Last verified commit / previous checkpoint: f5cbf5e2c07e454b7d00992b7f8666bbf14cee61.
+Local HEAD matches the recorded origin/feat/live-camera ref. No changes staged. No commit or push performed by the agent.
 
 ### Next exact actions
 
-1. Show Phase 1 checkpoint and stop before committing. Wait for explicit approval; do not start Phase 2.
-2. On approval, re-read this log, run git status/branch/log, and reconcile any unexpected changes. Commit only the six intended Phase 1 files with the message below.
-3. Report commit SHA and final Git status in chat; do not edit the log solely to store its own commit SHA, and do not push.
-4. Only when Phase 2 is authorized: read the log and inspect Git; record the Phase 1 checkpoint SHA as part of Phase 2 work.
-5. Phase 2: implement detectors/local_ultralytics.py with LocalUltralyticsDetector loading YOLO once, preserving weights/conf/device/imgsz behavior, converting predictions to normalized boxes and attaching inference timing/metadata. Add mocked provider tests.
-6. Adapt existing local inference through that provider only within the approved Phase 2 scope, preserving webcam/network scheduling, reconnect, cleanup, verdicts, and publishing. Do not add Roboflow, SDK dependency, or provider-selection CLI yet.
-7. Run local provider tests and existing regression suite, update this log, and stop before the Phase 2 checkpoint commit.
+1. Show the four-file Phase 2 checkpoint and exact staging/commit commands to the user; stop. The user creates commits.
+2. Wait for the user to commit and explicitly authorize Phase 3. Do not start it now.
+3. On continuation, read this log, run git status/branch/log, verify the user-created Phase 2 commit and intended files, reconcile origin state, and record its SHA as normal Phase 3 work.
+4. Phase 3: inspect SDK availability/API and dependency compatibility using uv; add inference-sdk==1.7.3 unless a deliberately compatible version is already pinned. Preserve Ultralytics and unrelated dependency versions.
+5. Implement RoboflowDetector for contamination-detection-ozkwx/1, supported in-memory input, header API-key transport, bounded timeout, center-box conversion, metadata, and safe error handling. Read ROBOFLOW_API_KEY from the environment; never log secrets.
+6. Add mocked Roboflow normalization/configuration/failure tests, run relevant/full tests and syntax/diff checks, update this log, and stop with user commit details. Do not add provider-selection/live remote integration before Phase 4.
 
 ## Commit checkpoint
 
-Phase 0 baseline and log-only sync: COMPLETE.
-Phase 1 implementation: COMPLETE, not committed.
+Phase 0 and Phase 1: COMPLETE and committed.
+Phase 2: COMPLETE, not committed.
 
-Commit required: YES — exactly the six Phase 1 files listed above.
+Files to stage: detectors/local_ultralytics.py, tests/test_local_ultralytics_detector.py, live_camera.py, CODEX_WORK_LOG.md.
 
 Suggested commit message:
 
 ```text
-refactor(ai): introduce provider-neutral detection interface
+refactor(ai): wrap local YOLO inference as detector provider
 ```
 
-Commit approved by user: NO.
-
-Commit SHA:
-`PENDING — report in chat after approval; record at the beginning of the next phase.`
+Commit owner: USER. The agent must NEVER run git add, git commit, or git push.
+Commit SHA: PENDING user-created commit; record when the next phase begins.
 
 ## Checkpoint workflow — user revision
 
-This workflow supersedes the plan's instruction to update the log with a checkpoint's own SHA immediately after committing.
-
-- Before each checkpoint commit, record the completed phase, tests/results, files changed, Git state, and exact next actions in this log; include it in that commit.
-- After committing, report the SHA and final Git status in chat. Do not edit this log solely to insert that commit's own SHA.
-- At the beginning of the NEXT authorized phase, inspect git log and record the previous checkpoint SHA as part of that phase's normal work.
-- Each checkpoint should end with a clean working tree. Commit approval remains mandatory. Do not push without explicit authorization.
+- User creates all commits. Agent provides project/repository/branch, exact files, commit message, commands, tests, Git status, and next phase at each checkpoint, then stops.
+- Before a checkpoint, record completed work, tests/results, changed files, Git state, and next actions in this log for inclusion in the user-created commit.
+- Do not edit this log solely to insert that commit's own SHA afterward. Record the previous checkpoint SHA at the beginning of the next authorized phase.
+- Do not push or begin the next phase without user instruction.
 
 ## Resume instructions
 

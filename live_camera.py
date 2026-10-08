@@ -10,6 +10,7 @@ from pathlib import Path
 import time
 
 from backend_publisher import BackendPublisher
+from detectors.types import DetectionBox
 
 
 DEFAULT_WEIGHTS = str(
@@ -25,38 +26,27 @@ COLORS = {
 
 
 def summarize_result(result=None):
-    """Convert YOLO result into SmartPhset contamination state."""
-
+    """Compatibility adapter for existing Ultralytics result callers."""
     boxes = []
-
     if result is not None and result.boxes is not None:
         for cls, conf, xyxy in zip(
             result.boxes.cls.tolist(),
             result.boxes.conf.tolist(),
             result.boxes.xyxy.tolist(),
         ):
-            boxes.append(
-                {
-                    "label": result.names[int(cls)].lower(),
-                    "conf": float(conf),
-                    "xyxy": xyxy,
-                }
-            )
+            boxes.append(DetectionBox(
+                label=result.names[int(cls)],
+                confidence=float(conf),
+                xyxy=tuple(xyxy),
+            ))
+    return summarize_detections(boxes)
 
-    contaminated = [
-        b for b in boxes
-        if b["label"].startswith("contam")
-    ]
 
-    healthy = [
-        b for b in boxes
-        if b["label"].startswith("healthy")
-    ]
-
-    max_c = max(
-        (b["conf"] for b in contaminated),
-        default=0.0,
-    )
+def summarize_detections(boxes: list[DetectionBox]) -> dict:
+    """Apply SmartPhset's contamination-first policy to normalized boxes."""
+    contaminated = [b for b in boxes if b.label.startswith("contam")]
+    healthy = [b for b in boxes if b.label.startswith("healthy")]
+    max_c = max((b.confidence for b in contaminated), default=0.0)
 
     if contaminated:
         verdict = "contamination_suspected"
@@ -87,11 +77,14 @@ def summarize_result(result=None):
         "n_contaminated": len(contaminated),
         "n_healthy": len(healthy),
         "max_conf": max(
-            (b["conf"] for b in boxes),
+            (b.confidence for b in boxes),
             default=0.0,
         ),
         "max_contaminated_conf": max_c,
-        "boxes": boxes,
+        "boxes": [
+            {"label": b.label, "conf": b.confidence, "xyxy": list(b.xyxy)}
+            for b in boxes
+        ],
     }
 
 

@@ -5,5 +5,8 @@
 torch==2.12.1
 torchvision==0.27.1
 ultralytics==8.4.71
-numpy==2.4.4
+numpy==2.3.5
 opencv-python==4.10.0.84
+
+# Hosted mushroom provider; Python 3.11 compatible.
+inference-sdk==1.7.3

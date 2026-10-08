@@ -8,10 +8,10 @@ Current branch:
 `feat/live-camera`
 
 Last verified commit:
-`bb81eca2f148681ea782b11d9925ffeac357be8a`
+`a76e5a4d6316fffa808a69cc47fa9c4447165dee`
 
 Last updated:
-2026-10-08T16:59:02.076347+07:00
+2026-10-08T17:06:37.436760+07:00
 
 ## Goal
 
@@ -27,11 +27,11 @@ and SmartPhset verdict behavior.
 - [x] Phase 3 — Roboflow provider
 - [x] Phase 4 — live-camera integration
 - [x] Phase 5 — evaluation tooling
-- [ ] Phase 6 — documentation and final validation
+- [x] Phase 6 — documentation and final validation
 
 ## Current phase
 
-Phase 5 — detector evaluation tooling COMPLETE. Implementation/validation passed; checkpoint commit/push next. Phase 6 not started.
+Phase 6 — documentation and final validation COMPLETE. All planned implementation phases and automated gates passed. Final checkpoint commit pending; delivery subject to the GitHub DNS blocker recorded below. Hardware/live-service acceptance and real-data evaluation remain manual follow-up.
 
 ### Completed in this phase
 
@@ -337,3 +337,82 @@ Dependency/version changes: NONE. Camera, BackendPublisher/backend, provider imp
 3. If push fails, preserve validated local commit and record delivery blocker. Wait for network/external push before Phase 6.
 4. Phase 6 — documentation and final validation: reconcile Git/previous SHA; update docs/live-camera.md for webcam/local, ESP32/local, ESP32/Roboflow, keys, failures, throttling and cleanup. Create docs/model-integration.md with model/source/classes/CC BY 4.0 attribution, current deployment/confidence, evaluation procedure/results explicitly not yet measured. Link evaluator documentation from README as useful; no accuracy claims without real data.
 5. Run final full tests, syntax, CLI help/diff/uv compatibility gates and provide manual camera/backend/evaluation commands. Do not invoke real paid inference without a separately intentional manual run. Phase 6 not started in this checkpoint.
+
+
+## Phase 5 delivery blocker — 2026-10-08
+
+Implementation/validation COMPLETE; delivery checkpoint INCOMPLETE.
+
+- Committed only tools/evaluate_detector.py, tests/test_evaluate_detector.py, docs/evaluation.md, CODEX_WORK_LOG.md with `feat(ai): add detector evaluation workflow`.
+- `git push origin feat/live-camera` failed exit 128: `Could not resolve host: github.com`. No successful push or fresh remote verification claimed.
+- Working tree was clean after commit. This required blocker record is now the only modification, documenting failure rather than solely storing a commit SHA. No implementation changes after commit; no Phase 6 work.
+- Next exact actions: restore tool-environment GitHub access or externally push existing feat/live-camera; reconcile Git and preserve this note as normal Phase 6 work (no standalone log commit). Verify the evaluation commit on origin before starting Phase 6. Do not recreate completed evaluator or manufacture dataset metrics.
+
+
+## Phase 6 — documentation and final validation
+
+Status: COMPLETE (documentation, implementation review and automated validation).
+Final checkpoint delivery remains pending commit/push; known tool-environment GitHub DNS limitation below. This is the authoritative final project/resume state; earlier phase next-action and blocker sections are historical.
+
+### Phase 5 reconciliation / delivered history
+
+- Read entire work log first; inspected status, branch, git log -10, status -sb, remotes and pre-existing work-log diff before editing.
+- Phase 5 SHA a76e5a4d6316fffa808a69cc47fa9c4447165dee (`feat(ai): add detector evaluation workflow`) exists as HEAD and recorded origin/feat/live-camera. User confirms external successful push. Only expected post-Phase-5 blocker-log note was modified at startup; preserved and reconciled here, no separate documentation-only reconciliation commit.
+- Ancestry checks confirm baseline 8a1f7b3, Phase 1 f5cbf5e, Phase 2 f2aaf30, Phase 3 335f67d, Phase 4 bb81eca and Phase 5 a76e5a4 all exist on recorded origin/feat/live-camera. Phase 0 was repository inspection/log work, not a separate implementation commit. Direct live remote lookup still fails DNS; no fresh remote read is claimed.
+
+### Research (2026-10-08) / resulting decisions
+
+- https://pypi.org/project/inference-sdk/ and /1.7.3/ checked current official registry; SDK remains 1.7.3, Python >=3.10,<3.14. Independently inspected installed metadata and client/config APIs: constructor api_url/api_key; header config, confidence_threshold and client_downsizing_disabled accepted. Phase 3 installed transport tests cover actual async/frame/auth/cancellation behavior. No new SDK/dependency version needed.
+- https://universe.roboflow.com/oyster-mushroom-fruiting-bag/contamination-detection-ozkwx rechecked: Contamination Detection by Oyster Mushroom Fruiting Bag, object detection, Healthy/Contaminated, CC BY 4.0, serverless endpoint/model ID /1, header-auth snippet. Documentation attributes project/license and never promotes public metrics to local farm validation.
+- https://docs.roboflow.com/deploy/serverless-hosted-api-v2 reviewed hosted context; official model example and installed API are used for exact endpoint/signatures. No real hosted inference, account-specific rate or access verification. Pricing linked rather than asserting a universal rate.
+- https://docs.ultralytics.com/modes/predict/ rechecked official predict inputs/box/confidence outputs; installed 8.4.71 retained despite newer documentation examples. https://www.ultralytics.com/license checked; replaced old oversimplified README licensing advice with official terms link, no legal conclusion.
+- https://docs.astral.sh/uv/concepts/indexes/ rechecked first-index and unsafe-best-match semantics; https://docs.astral.sh/uv/pip/environments/ checked direct --python environment management. Document tested command for this PyTorch extra-index setup only, include dependency-confusion tradeoff and avoid universal recommendation. requirements is not a transitive lock; requests 2.34.2 is actual installed transitive version, not pinned directly.
+- Documentation uses actual --help output, current source and installed versions instead of plan sketches. Generic ESP32 placeholders replace machine-specific IP/path examples. No Windows hardware/installation claim; commands there are adaptation guidance.
+
+### Final architecture / changes
+
+- Camera/webcam -> live_camera -> shared Detector interface -> local YOLO or hosted Roboflow -> normalized DetectionResult/DetectionBox -> shared contamination-first verdict -> overlay + BackendPublisher.
+- Local remains default, weights unchanged, YOLO loads once. Hosted accepts in-memory frames with environment key/header auth, no local fallback. One inference in flight and scheduler throttling retained. Hosted failures/expired results GREY, camera reconnect independent. Backend receives structured snapshots only; selected hosted images go to Roboflow, not Spring.
+- README now introduces both providers and evaluation with uv setup and current guide links; retains bridge/training/model-card entry points and distinguishes historical public data from farm validation.
+- docs/live-camera.md rewritten around actual CLI/setup, local webcam/ESP32/hosted commands, lower hosted rate, thresholds/messages, expiry/deadline/reconnect/shutdown limits, exact backend fields/key/publishing behavior, security/recovery and manual checklist.
+- docs/model-integration.md created: architecture diagram, official attribution, actual SDK async/timeouts/auth/normalization, preserved local provider, model/evaluation limitations and deployment choice.
+- docs/evaluation.md reviewed against tool/tests; already accurate, intentionally unchanged. Defines CSV/scoring/availability/nearest-rank p95 and no-data status.
+- Code-quality review found provider factory and verdict are already shared. Small CLI argument declarations are duplicated across entry points but consolidating them would broaden this docs phase without correcting behavior; no broad refactor or product feature added.
+
+### Files / dependencies / intentional nonchanges
+
+Created: docs/model-integration.md.
+Modified: README.md; docs/live-camera.md; CODEX_WORK_LOG.md (includes preserved Phase 5 delivery note and final reconciliation).
+Dependency/version changes: NONE. No runtime/test/model/backend/frontend/source changes. No evaluation CSV staged; .gitignore unchanged.
+Actual installed protected stack: ultralytics 8.4.71, torch 2.12.1+cpu, torchvision 0.27.1+cpu, opencv-python 4.10.0.84. Other verified versions inference-sdk 1.7.3, numpy 2.3.5, requests 2.34.2. Requirements dry-run would change nothing.
+
+### Final validation results
+
+- `.venv/bin/python -m unittest discover -s tests -q`: PASS 81 tests, 1.106s, including installed SDK with mocked transport, all camera/provider/reconnect/cleanup/payload regressions and evaluation fixture tests. No live/paid inference.
+- py_compile of every git-tracked Python file: PASS 22 files (including training/demos/tools/tests). Syntax only does not assert optional demo dependencies installed.
+- `git diff --check`: PASS; rerun completed/staged documentation before commit.
+- `UV_CACHE_DIR=/tmp/smartphset-uv-cache uv pip check --python .venv/bin/python`: PASS, 58 compatible packages.
+- Same uv install command with --offline --dry-run: PASS checked 6 direct requirements, would make no changes.
+- live_camera.py --help and tools/evaluate_detector.py --help: PASS, documented flags/defaults inspected.
+- Imports inference_sdk, numpy, requests, ultralytics, torch, torchvision, cv2: PASS; actual SDK configuration and Python metadata independently inspected.
+- Real local smoke: loaded actual best.pt through build_detector with --device cpu, ran one synthetic black 480x640 BGR frame, got valid local result (zero boxes), closed detector. Socket connections blocked; no downloads/request permitted. This is runtime compatibility only, not quality evidence. Matplotlib used a temporary cache because home config is read-only; harmless environment warning, no repo modification.
+- models/best.pt exists and byte-for-byte matches committed artifact. SHA256 b0e668a680c4ec7961c0ac0805fbeab92f42d0bde7aa1187d9dad7f6075b0b22. No replacement/retraining.
+- Local-default, unknown-label never GREEN, contamination priority/thresholds, hosted failures GREY/recovery/no reconnect, stale expiry and unchanged BackendPublisher payload verified by full regression suite.
+- Common credential-pattern scan of tracked readable text plus new document: PASS (private-key markers, GitHub tokens, AWS key IDs); no tracked dotenv files. Reviewed examples/test placeholders and intended diff; no actual API keys introduced. Pattern scan is not an exhaustive secret-history audit and does not expose candidate values.
+- Local documentation file-link check PASS. Reviewed complete README/live guide diff and new integration doc. No unrelated files or generated metrics intended for commit.
+
+### Real-world status / known limitations
+
+- evaluation/ still absent; no representative real-data evaluation or model-quality conclusion. Historical public-data results remain distinct. Synthetic fixtures/local smoke validate code only.
+- No webcam/ESP32 GUI session, camera/network hardware, live hosted API or running backend acceptance performed. Manual checklist in docs/live-camera.md covers stream/overlay/backend/hosted outage vs camera outage/evaluation/q/Ctrl+C.
+- Local detections persist between passes as before. Hosted trust expires after max(5 seconds, two inference intervals), checked while camera loop advances. Blocking camera calls/reconnects can delay GUI progress; q needs preview progress, Ctrl+C handles reconnect waits. SDK deadline does not preempt synchronous encoding. Publisher is best effort and not durable.
+- Before commit `git ls-remote origin refs/heads/feat/live-camera` FAILED exit 128: `Could not resolve host: github.com`. Thus a final push is likely blocked in this execution environment despite normal-terminal access. This delivery blocker is recorded BEFORE commit as requested; no second log-only change/commit will be created after a failed push. Final push outcome will be reported in chat. Preserve validated local commit if it fails.
+
+### Exact final commit / next actions
+
+- Project SmartPhset-AI; repository phset-ai; branch feat/live-camera. Previous delivered checkpoint a76e5a4d6316fffa808a69cc47fa9c4447165dee.
+- Before staging expected status: M README.md, M docs/live-camera.md, M CODEX_WORK_LOG.md, ?? docs/model-integration.md. Stage ONLY these four files.
+- Exact commit message: `docs(ai): finalize model integration workflow` (documentation only; no code correction needed).
+- Commit, attempt normal push origin feat/live-camera, inspect final status. If DNS fails, leave commit locally with clean working tree and report SHA for external push; no post-commit log-only update. On next work verify delivered SHA from Git, do not restart phases.
+- Automated implementation is ready for PR review once final commit is delivered. Hardware/manual integration and representative data acceptance remain release gates before any production-quality claim. No PR/merge/promotion performed automatically.
+- Remaining recommended work: run documented manual equipment/backend checks; collect balanced independently labeled grow-room samples; evaluate both providers, review misses/false alerts/availability/latency and explicitly select deployment; record actual results/configuration in a future coherent checkpoint. No additional planned implementation phase remains.

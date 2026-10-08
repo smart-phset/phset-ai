@@ -1,156 +1,213 @@
-# SmartPhset desktop live camera
+# SmartPhset live camera
 
-Run from your existing repository. Uses `models/best.pt` without modifying or
-retraining it. Point at oyster mushroom bags; this demo model is not field validated.
+Run from the repository root in a graphical desktop session. Webcam and ESP32
+streams use the same detector/verdict/backend pipeline. The local model is the
+default; neither provider is validated on representative SmartPhset grow-room data.
 
-## Arch Linux environment
+## Python 3.11 setup with uv
 
-Use a local graphical desktop session with access to `/dev/video*`, rather than a
-headless server or SSH session. Use **Python 3.11**, as specified by this repository's
-pinned requirements; Arch's default Python can be newer. Install Python 3.11 using
-your existing Python version manager first if `python3.11` is unavailable.
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) first.
+For a fresh Linux environment:
 
 ```bash
-python3.11 -m venv .venv
+uv venv --python 3.11 .venv
+UV_CACHE_DIR=/tmp/smartphset-uv-cache \
+uv pip install \
+  --python .venv/bin/python \
+  --index-strategy unsafe-best-match \
+  -r requirements.txt
+UV_CACHE_DIR=/tmp/smartphset-uv-cache uv pip check --python .venv/bin/python
 source .venv/bin/activate
-python -m pip install --upgrade pip
-# Clear conflicting OpenCV distributions in an existing venv (safe in a fresh one).
-python -m pip uninstall -y opencv-python-headless opencv-python opencv-contrib-python opencv-contrib-python-headless
-python -m pip install -r requirements.txt
-python -m pip check
 ```
 
-`requirements.txt` now selects `opencv-python==4.10.0.84`, the GUI build, instead of
-headless OpenCV. Do not install both: they share the `cv2` namespace. This also enables
-the existing `webcam.py`; the bridge still uses the same OpenCV decoding APIs.
-On Arch, if GUI/shared-library startup reports missing X11, GL or Qt xcb libraries:
+Reuse an existing `.venv`; do not recreate it merely because it lacks pip. uv
+installs directly into the selected Python environment. On Windows, use
+`.venv\Scripts\python.exe` for `--python` and activate with
+`.\.venv\Scripts\Activate.ps1`; set environment variables using PowerShell syntax.
+
+The verified Linux stack is Python 3.11, inference-sdk 1.7.3, NumPy 2.3.5,
+requests 2.34.2, Ultralytics 8.4.71, torch 2.12.1+cpu,
+torchvision 0.27.1+cpu and opencv-python 4.10.0.84. requests is an SDK-resolved
+transitive dependency, not an exact pin in requirements.txt. This requirements
+file is not a complete transitive lockfile.
+
+This repository includes the PyTorch CPU extra index. uv's default `first-index`
+policy can restrict shared packages to versions from that index, excluding the
+PyPI versions required by the SDK. The command above was used successfully for
+this combined environment; `unsafe-best-match` considers both indexes. It is a
+workaround for this setup, not a universal recommendation: it relaxes index
+isolation and carries dependency-confusion risk. See [uv index behavior](https://docs.astral.sh/uv/concepts/indexes/#searching-across-multiple-indexes).
+NumPy was reduced from 2.4.4 because SDK 1.7.3 requires <2.4; requests increased
+from 2.28.1 because it requires >=2.33. Ultralytics/torch/torchvision/OpenCV were
+preserved. Do not solve installation failures by blindly upgrading this stack.
+
+Use GUI-enabled `opencv-python`, not a simultaneous headless/contrib distribution
+sharing the `cv2` namespace. Check `python -c 'import cv2; print(cv2.getBuildInformation())'`
+and camera device permissions if startup fails. On Linux, ensure a working
+X11/XWayland desktop and the GUI libraries named by any loader error. The examples
+use `QT_QPA_PLATFORM=xcb` for the tested desktop setup; other platforms may omit it.
+
+## Local provider
 
 ```bash
-sudo pacman -S --needed mesa libglvnd libx11 libxcb libxext libxrender libsm libice libxkbcommon-x11 xcb-util-cursor xcb-util-image xcb-util-keysyms xcb-util-renderutil xcb-util-wm
+QT_QPA_PLATFORM=xcb python live_camera.py \
+  --cam 0 --model-provider local --conf 0.4 --fps 5
+
+QT_QPA_PLATFORM=xcb python live_camera.py \
+  --source "http://<esp32-ip>:81/stream" \
+  --model-provider local --conf 0.4 --fps 5
 ```
 
-Check GUI support and camera device permissions:
+Replace `<esp32-ip>` before running. The ESP32 firmware typically exposes
+`http://<esp32-ip>/`, `/capture`, and port 81 `/stream`. Confirm these endpoints
+for your firmware. ESP32 supplies images/video; AI runs on the laptop/server/edge
+device. Webcam uses `--cam` (default 0); `--source` takes precedence when supplied.
+Network snapshots are for inspection; use the MJPEG stream URL for live preview.
+
+Default weights resolve to `models/best.pt` beside the script. `--weights` selects
+another existing local file, `--imgsz` defaults to 416, and `--device` optionally
+selects e.g. `cpu` or `0`. YOLO loads once; no API key or hosted SDK runtime is
+needed for the local path. Device selection otherwise remains with Ultralytics.
+
+## Roboflow provider
 
 ```bash
-python -c 'import cv2; print(cv2.getBuildInformation())'
-ls -l /dev/video*
+export ROBOFLOW_API_KEY="..."
+QT_QPA_PLATFORM=xcb python live_camera.py \
+  --source "http://<esp32-ip>:81/stream" \
+  --model-provider roboflow \
+  --roboflow-model-id contamination-detection-ozkwx/1 \
+  --roboflow-api-url https://serverless.roboflow.com \
+  --conf 0.4 --fps 1
 ```
 
-The OpenCV build should list GUI support. If camera access is denied, check your
-desktop session's device ACLs/group permissions and close applications using the
-camera. If a Wayland session reports Qt platform errors, try XWayland with
-`QT_QPA_PLATFORM=xcb python live_camera.py` (XWayland must be installed and running).
+Set your actual key privately; `...` is only a placeholder. Hosted inference
+sends selected image frames to Roboflow and may incur usage charges. Start with
+1 requested inference FPS rather than the incoming video rate; network latency,
+quota and usage cost differ from local inference. Preview runs independently.
+Default requested FPS remains 5 for both providers unless explicitly overridden.
+No live hosted request is made by automated tests.
 
-## Run
+Missing `ROBOFLOW_API_KEY` fails startup clearly. Hosted mode does not load local
+weights. There is no automatic fallback to local. See [model and SDK details](model-integration.md).
 
-```bash
-python live_camera.py
-python live_camera.py --cam 0
-python live_camera.py --cam 1
-python live_camera.py --cam 0 --conf 0.4 --fps 5
-python live_camera.py --device cpu
-python live_camera.py --weights models/best.pt
-```
+## Scheduling, verdicts and failures
 
-`--cam` defaults to 0, `--conf` to 0.4, `--fps` to 5. Default weights resolve to
-`models/best.pt` beside the script, independently of the shell's working directory.
-Device selection is left to Ultralytics unless `--device` is supplied; CUDA is not
-required. Input inference size is 416, matching the bridge.
+One worker handles at most one inference in flight. Busy frames are dropped,
+not queued. `--fps` limits inference starts; it does not set video FPS or guarantee
+completion frequency. A frame copy isolates inference from overlay drawing.
+The overlay shows completion FPS, provider latency and time since the most recent
+completion. Boxes refer to the inspected frame and can lag motion.
 
-A single worker loads YOLO once and predicts on copied OpenCV frames. The main thread
-continues reading and displaying frames while inference runs. At most one inference
-is in flight, with no queue of old frames. `--fps` limits inference starts; actual AI
-FPS depends on hardware. The overlay shows measured completion FPS and inference
-latency, plus the latest result's age. Bounding boxes remain visible between passes;
-they come from the last inspected frame and can lag moving bags.
+| Result | Severity | Message |
+| --- | --- | --- |
+| Contamination confidence >= 0.80 | RED | Possible contamination |
+| Contamination confidence >= 0.40 and < 0.80 | AMBER | Possible contamination |
+| Contamination confidence < 0.40 | GREY | Possible contamination |
+| Healthy detection(s), no contamination | GREEN | No contamination seen |
+| No recognized detections, unavailable or expired hosted result | GREY | Could not inspect |
 
-The class-name contamination prefix and contamination-first verdict follow
-`bridge.py`; only labels starting with `healthy` count as healthy in this preview.
-Unrelated labels never produce a healthy verdict. The bridge and `POST /image`
-are unchanged.
+Contamination always wins over Healthy, even below 0.40. Confidence stays
+unrounded internally. `--conf` filters provider detections independently of these
+fixed severity rules; lowering it can expose low-confidence GREY contamination.
+Only recognized Healthy labels can produce GREEN; unrelated labels cannot.
 
-| Situation | Verdict/message | Level |
-|---|---|---|
-| Contaminated confidence >= 0.80 | `contamination_suspected` / Possible contamination | RED |
-| Contaminated confidence >= 0.40 and < 0.80 | `contamination_suspected` / Possible contamination | AMBER |
-| Healthy bags only | `no_contamination_seen` / No contamination seen | GREEN |
-| No relevant detections, including before first inference | `no_detection` / Could not inspect | GREY |
+Camera failures and inference failures are separate:
 
-Severity always uses `max_contaminated_conf`, never overall `max_conf`. If you lower
-`--conf` below 0.40, lower-confidence contamination still gives Possible contamination
-with GREY (below the defined alert threshold), never GREEN.
+- Network read failure releases/reopens the stream after `--reconnect-delay`
+  (default 2 seconds). Failed reconnects are retried. An initial open failure
+  stops startup. A local webcam read failure stops inspection.
+- Expected hosted/API failure keeps preview alive, replaces results with GREY /
+  Could not inspect, and retries at later scheduled opportunities. It does not
+  reconnect the camera. No SDK exception text or key is printed.
+- Hosted results expire after `max(5 seconds, 2 / requested FPS)` from frame
+  submission, including results already too old when they arrive. Expiry clears
+  boxes and offers GREY to the publisher. Local result persistence is unchanged.
+- Unexpected programming errors and local inference errors still stop the process.
 
-Press **q** with the preview focused or **Ctrl+C** in the terminal. Camera read errors
-stop inspection instead of continuing to show a healthy result. `finally` releases
-the camera and destroys all windows on normal exit, interruption, or exceptions.
-Shutdown waits for any current inference to finish after releasing GUI resources.
-
-## Hardware-independent checks
-
-```bash
-python -m py_compile live_camera.py
-python -m unittest discover -s tests -v
-```
-
-Tests use the standard library and mocked camera/model objects; they require neither
-OpenCV, torch, a display nor a webcam. They verify verdict thresholds, mixed healthy
-and contaminated confidence, unknown/empty results, prediction settings, cleanup, and
-preview progress while inference is pending. Real camera capture, GUI startup, and
-model latency must also be checked on your laptop with the run commands above.
+Press **q** with preview focused, or **Ctrl+C** in the terminal. Cleanup closes
+the publisher, releases the camera, destroys windows, shuts down the worker and
+closes the detector. Shutdown waits for active inference; hosted network awaits
+have an eight-second provider deadline. Synchronous encoding or blocking camera
+operations are not preemptible; q is processed when preview advances, so use
+Ctrl+C during reconnect waits.
 
 ## Publish detection snapshots to Spring Boot
 
-On this Arch/Hyprland machine the OpenCV Qt window currently requires
-`QT_QPA_PLATFORM=xcb`.
-
 ```bash
-cd /home/ratanak/smart-phset/SmartPhset-AI
-source .venv/bin/activate
+export SMARTPHSET_BACKEND_URL="http://localhost:9090"
+export SMARTPHSET_AI_INGEST_KEY="..."  # only if your backend requires it
 QT_QPA_PLATFORM=xcb python live_camera.py \
-  --cam 0 \
-  --conf 0.4 \
-  --fps 5 \
-  --backend-url http://localhost:9090 \
-  --publish-every 5
+  --source "http://<esp32-ip>:81/stream" \
+  --model-provider local --conf 0.4 --fps 5 \
+  --backend-url http://localhost:9090 --publish-every 5
 ```
 
-Alternatively, `SMARTPHSET_BACKEND_URL=http://localhost:9090` sets the default
-backend URL. Without a URL, publishing is disabled and no network worker starts.
-If the backend configures `AI_INGEST_KEY`, set the same private value in the AI shell:
+CLI `--backend-url` overrides the environment default. Without either, publishing
+is disabled. `SMARTPHSET_AI_INGEST_KEY` supplies the optional
+`X-SmartPhset-AI-Key` header; configure the matching value on your backend.
+
+Publisher POSTs JSON to `/api/ai/detections`. Fields remain `event_id` (UUID),
+`camera_id` (`webcam-<cam>` or `esp32-cam`), `captured_at` (UTC), `verdict`,
+`severity`, `message`, `n_contaminated`, `n_healthy`, `max_conf`,
+`max_contaminated_conf`, `width`, `height`, `inference_ms`, and `boxes`
+(`label`, `conf`, integer `xyxy`). Inference milliseconds are rounded for the
+payload; confidence is not. Successful capture timestamps are taken at inference
+start. Unavailable/expiry snapshots have a current snapshot timestamp, empty boxes
+and zero latency/counts; they are not successful observations.
+
+Spring receives structured snapshots, never image/video data. First completed
+inspection (including an unavailable result) is offered immediately; subsequent
+results are eligible every `--publish-every` seconds (default 5) or when
+verdict/severity changes. Hosted expiry also offers GREY; no pre-inference healthy
+snapshot is invented. Publisher has one HTTP request and one replaceable pending
+snapshot, with a three-second socket timeout. Errors are best effort: failed events
+are dropped, no durable queue/retry; later eligible snapshots continue. Backend
+outages do not block preview/inference. Shutdown drops pending publishing work.
+The Spring backend is unchanged by this integration.
+
+## Security and recovery
+
+Keep ROBOFLOW_API_KEY and SMARTPHSET_AI_INGEST_KEY in the environment, never source,
+CLI key arguments or committed files. `.env` and CSV files are ignored; do not
+force-add secrets. Avoid logging keys, request headers, or raw SDK exception text.
+Tests/examples use placeholders only. Prefer credential-free stream/API URLs;
+stream source URLs are printed at startup.
+
+If package downloads or Git pushes fail DNS, restore access in the affected
+terminal/environment. Do not recreate completed code or install pip into `.venv`.
+Inspect `git status`, branch and work log before resuming; an external successful
+push can be reconciled into the next normal checkpoint without a log-only commit.
+
+## Automated and manual validation
 
 ```bash
-export SMARTPHSET_AI_INGEST_KEY='<your-local-key>'
+python -m unittest discover -s tests -v
+python live_camera.py --help
+python tools/evaluate_detector.py --help
+UV_CACHE_DIR=/tmp/smartphset-uv-cache uv pip check --python .venv/bin/python
 ```
 
-The publisher POSTs JSON to `/api/ai/detections` with `Content-Type: application/json`
-and the optional `X-SmartPhset-AI-Key` header. Each queued snapshot has a new UUID
-`event_id`, camera ID `webcam-<cam>`, UTC capture timestamp, verdict, severity,
-counts, both confidence maxima, source dimensions, inference milliseconds and boxes
-(`label`, `conf`, integer `xyxy`). No frames or video are sent, and no extra inference
-runs. The capture timestamp is taken at inference start rather than HTTP send time.
+Full tests need installed requirements (including NumPy/SDK/OpenCV for installed-API
+and decode fixtures), but need no real key, camera, display or running backend.
+Roboflow/HTTP inference tests are mocked. See [evaluation](evaluation.md) for
+labeled-image comparison; current project has no real SmartPhset evaluation results.
 
-The first completed inference publishes immediately. Later completed results publish
-at most every five seconds by default, or immediately when verdict/severity changes.
-No snapshots publish before the first completed inference. Publishing continues only
-with completed inference results so a stalled inference cannot repeatedly report an
-old healthy observation as new.
+Manual checks still required on your equipment:
 
-A single daemon HTTP worker has one in-flight request and at most one pending event.
-New eligible snapshots replace the pending event, keeping memory bounded during
-outages. Under a slow backend, intermediate state transitions can be superseded by
-the newest snapshot. HTTP uses the Python standard library with a three-second socket
-timeout. Connection failures, timeouts and HTTP errors log a warning and drop that
-event; future periodic/change events continue without retries or durable buffering.
-Capture, preview, YOLO and q handling never wait for networking. Shutdown discards
-pending publishing work without waiting for an HTTP request.
+- [ ] Open ESP32 root/capture/stream endpoints and verify live frames.
+- [ ] Run local webcam and ESP32 commands; check responsive preview and overlay.
+- [ ] Enable backend publishing; verify latest/history snapshots in the running
+  backend for `camera=esp32-cam` (or `webcam-0`), correct fields and state changes.
+- [ ] Start hosted provider with private environment key, explicitly accepting
+  hosted usage; verify box alignment and expected verdicts.
+- [ ] Temporarily interrupt hosted connectivity while camera remains reachable:
+  preview continues, becomes GREY, no ESP32 reconnect; restore and verify recovery.
+- [ ] Interrupt camera stream separately and verify reconnect after restoration.
+- [ ] Run both evaluator commands on independently labeled representative images;
+  inspect misses, false alerts, availability and latency—not accuracy alone.
+- [ ] Verify q and Ctrl+C cleanup, including a slow inference/reconnect case.
 
-Verify persistence from another terminal:
-
-```bash
-curl 'http://localhost:9090/api/ai/detections/latest?camera=webcam-0'
-curl 'http://localhost:9090/api/ai/detections?camera=webcam-0&limit=20'
-```
-
-Publisher tests mock HTTP and use no backend, webcam or model. Existing cleanup tests
-remain part of `python -m unittest discover -s tests -v`. `bridge.py` and its existing
-`POST /image` API are unchanged.
+No live hosted, hardware GUI/ESP32 or running-backend acceptance is claimed by the
+automated validation. A synthetic local inference smoke test is not model-quality
+validation.

@@ -1,107 +1,96 @@
 # SmartPhset AI
 
-The mould-detection AI for SmartPhset, the oyster-mushroom climate and contamination system. A photo of a grow
-bag goes in; the AI marks bags it thinks are contaminated, with a confidence score.
+Mushroom-bag detection for SmartPhset using a local Ultralytics model or the
+existing Roboflow mushroom detector. AI checks are suggestions, not proof of
+health: no representative SmartPhset grow-room validation has been completed.
 
-- **`bridge.py`** is the AI server. The website and the Node backend send photos to it (`POST /image`).
-- **`models/best.pt`** is the trained model: YOLOv8n, 6 MB, runs on an ordinary laptop CPU in well under a second.
-- The website is a separate repo: [SmartPhset-Prototype-Frontend](https://github.com/menghoutishere-code/SmartPhset-Prototype-Frontend)
-  (live at https://smartphset.vercel.app).
+`live_camera.py` reads a webcam or ESP32-CAM stream, schedules one inference at a
+time, applies the shared contamination-first verdict policy and displays results.
+It optionally publishes structured detection snapshots to Spring; it never sends
+video to the backend. Hosted inference sends selected frames to Roboflow.
 
-> **AI checks are suggestions, not proof.** The model learned from public photos and is **not yet validated on a
-> real farm**. "Could not check" never means healthy.
+## Start here
 
-## Quick start (Windows, Python 3.11)
-
-```powershell
-git clone git@github.com:menghoutishere-code/SmartPhset-AI.git
-cd SmartPhset-AI
-py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt          # a few hundred MB, mostly torch (CPU build)
-
-$env:BRIDGE_API_KEY = "<pick a long random key>"
-python bridge.py --api-key $env:BRIDGE_API_KEY
-```
-
-Then open `http://localhost:8000/?key=<your key>` in a browser. The page has an upload box to test a photo.
-On macOS or Linux use `python3.11 -m venv .venv`, `source .venv/bin/activate` and `export BRIDGE_API_KEY=...`.
-
-Test from the command line with one of the sample photos:
+Use Python 3.11 and the existing uv workflow. Full setup, dependency/index
+explanation, GUI troubleshooting and manual checks are in
+[the live-camera guide](docs/live-camera.md).
 
 ```bash
-curl -s -H "Authorization: Bearer <your key>" -H "Content-Type: image/jpeg" \
-  --data-binary @evidence/demo/image0.jpg "http://localhost:8000/image?camera=test"
+uv venv --python 3.11 .venv  # fresh checkout only; reuse an existing environment
+UV_CACHE_DIR=/tmp/smartphset-uv-cache uv pip install \
+  --python .venv/bin/python --index-strategy unsafe-best-match -r requirements.txt
+UV_CACHE_DIR=/tmp/smartphset-uv-cache uv pip check --python .venv/bin/python
+source .venv/bin/activate
+QT_QPA_PLATFORM=xcb python live_camera.py \
+  --cam 0 --model-provider local --conf 0.4 --fps 5
 ```
 
-**Next:** [docs/run-the-bridge.md](docs/run-the-bridge.md) covers the tunnel and connecting the website or the
-backend.
+The index strategy is specific to this repository's PyTorch CPU extra-index
+setup; it is not a general installation recommendation. See the guide before
+changing dependencies. Windows uses `.venv\Scripts\python.exe` and PowerShell
+activation; Linux GUI examples use xcb where required.
 
-## What is in here
+Local is the default and uses `models/best.pt` without requiring a hosted key.
+For ESP32 use `--source "http://<esp32-ip>:81/stream"`. For hosted detection:
 
-| Path | What it is |
-|---|---|
-| `bridge.py` | The AI server: `/image` (photo in, result out), `/telemetry`, `/status`, and a status page |
-| `models/best.pt` | The trained model (see [docs/model-card.md](docs/model-card.md)) |
-| `app.py` | A simple browser test page (Gradio). Needs `requirements-extra.txt` |
-| `webcam.py` | Runs the model live on a webcam window |
-| `live_camera.py` | Responsive desktop webcam preview with SmartPhset verdicts, severity and inference metrics |
-| `training/` | Scripts to retrain and evaluate the model (see [docs/training.md](docs/training.md)) |
-| `evidence/` | Accuracy charts, the evaluation report and the threshold check behind the alert levels |
-| `docs/` | How to run it, the API, the model card, retraining |
+```bash
+export ROBOFLOW_API_KEY="..."  # private environment value, never commit it
+QT_QPA_PLATFORM=xcb python live_camera.py \
+  --source "http://<esp32-ip>:81/stream" --model-provider roboflow --fps 1
+```
 
-## Settings
+Hosted model defaults to `contamination-detection-ozkwx/1`; calls may consume paid
+usage. Expected hosted failures keep preview alive and become GREY / Could not
+inspect. There is no silent fallback. q or Ctrl+C exits with resource cleanup.
 
-For laptop/USB webcam detection on Arch Linux, see [docs/live-camera.md](docs/live-camera.md)
-for Python 3.11 setup and GUI OpenCV dependencies. Run `python live_camera.py --cam 0 --conf 0.4 --fps 5`.
-Press **q** or **Ctrl+C** to quit. The preview runs independently of inference and keeps the latest boxes visible.
-`requirements.txt` uses GUI-enabled OpenCV; remove any headless OpenCV installation before installing it.
+## Guides and entry points
 
-| Setting | Default | Meaning |
-|---|---|---|
-| `--api-key` or `BRIDGE_API_KEY` | none | Every request must send `Authorization: Bearer <key>` (or `?key=`). **Always set it before exposing the bridge through a tunnel.** |
-| `--weights` or `SMARTPHSET_WEIGHTS` | `models/best.pt` | The model file |
-| `--log` or `SMARTPHSET_LOG_DIR` | `bridge_log/` | Where CSV logs and the checked photos are saved |
-| `--port` | `8000` | Port |
-| `--conf` | `0.4` | Lowest confidence the model reports (the amber level) |
+| Path | Purpose |
+| --- | --- |
+| [docs/live-camera.md](docs/live-camera.md) | Setup, provider CLI, webcam/ESP32, backend, security, failure behavior and manual checklist |
+| [docs/model-integration.md](docs/model-integration.md) | Architecture, hosted model attribution, actual SDK implementation and validation limits |
+| [docs/evaluation.md](docs/evaluation.md) | Repeatable labeled-image comparison, scoring rules, CSV and latency metrics |
+| `tools/evaluate_detector.py` | Sequential evaluation through the shared detector abstraction |
+| `bridge.py` | Existing photo/telemetry/status server; see [bridge guide](docs/run-the-bridge.md) |
+| `webcam.py`, `app.py` | Existing standalone demos; app requires optional requirements |
+| `models/best.pt` | Preserved local weights; [local model card](docs/model-card.md) |
+| `training/`, `evidence/` | Historical training/public-data evaluation; [training guide](docs/training.md) |
+| `CODEX_WORK_LOG.md` | Permanent phase, research, validation and resume history |
 
-`python bridge.py --help` lists the camera polling options too.
+The live severity policy is RED at contamination >=0.80, AMBER at >=0.40 and
+<0.80, GREY below 0.40/no recognized detection/unavailable/expired hosted result,
+and GREEN only for Healthy detections without contamination. Contamination wins.
+Messages are Possible contamination, No contamination seen, and Could not inspect.
+The live policy does not relabel the separate legacy bridge/frontend wording.
 
-## Alert levels (used by the website)
+## Evaluate and validate
 
-Only the highest **contaminated** box counts (`max_contaminated_conf`):
+```bash
+python tools/evaluate_detector.py --dataset evaluation \
+  --model-provider local --output evaluation-results-local.csv
+python -m unittest discover -s tests -v
+python live_camera.py --help
+python tools/evaluate_detector.py --help
+```
 
-| Level | Rule | Shown as |
-|---|---|---|
-| Red | 0.80 or more | Likely mould |
-| Amber | 0.40 to 0.79 | Please check this bag |
-| Green | Bags found, nothing flagged | No mould seen |
-| Grey | `no_detection` or `camera_error` | Could not check (never healthy) |
+Create `evaluation/healthy/`, `evaluation/contaminated/`, and `evaluation/negative/`
+with your own labeled images first. CSV files are ignored by Git. Review
+contamination misses, false alerts and unavailable inspections alongside accuracy.
+No real SmartPhset evaluation dataset/results currently exist in this repository.
+Tests use mocked hosted requests; no real API key, camera or running backend is
+required, but the installed requirements are needed for the full suite.
 
-Why these numbers: [evidence/threshold-check-2026-10-03.md](evidence/threshold-check-2026-10-03.md).
+Never commit ROBOFLOW_API_KEY, SMARTPHSET_AI_INGEST_KEY or bridge keys. Backend
+publishing uses SMARTPHSET_BACKEND_URL / --backend-url and the optional ingest key
+from the environment; details are in the live guide. The bridge keeps its own
+BRIDGE_API_KEY configuration; see its guide before exposing it.
 
-## Honest limits
+## Credits and contributing
 
-- **Public data only.** Trained on a public Roboflow dataset of hand-held close-ups of oyster grow bags, not on our
-  farm's camera. Farm accuracy will be lower.
-- **Over-flags at amber.** On 752 held-out public photos, the 0.40 level missed no mould but also flagged 38% of
-  healthy photos. The 0.80 level flagged 10% of healthy photos and missed 14 of 373 mould photos.
-- **Two classes only:** contaminated or healthy. No mould type, and no "how early" claim yet.
-
-## Contributing
-
-Branches, the checks before a pull request, how to change the model, and what never to commit:
-[CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Licences and credits
-
-- **This repo is private.** It is not open source.
-- **Ultralytics YOLO** is AGPL-3.0. Keep this repo private, or get an Ultralytics licence, before publishing the
-  code or selling a product that includes it.
-- **Training data and the sample photos in `evidence/demo/`:** the oyster-mushroom fruiting-bag contamination
-  dataset on Roboflow Universe, CC BY 4.0:
-  https://universe.roboflow.com/oyster-mushroom-fruiting-bag/contamination-detection-ozkwx
-
-The live webcam detector can optionally publish structured snapshots to the Spring
-Boot backend on port 9090. See [live camera publishing](docs/live-camera.md#publish-detection-snapshots-to-spring-boot)
-for CLI options, environment keys, nonblocking publishing and local verification.
+Hosted model/project: **Contamination Detection** by **Oyster Mushroom Fruiting
+Bag**, [Roboflow Universe](https://universe.roboflow.com/oyster-mushroom-fruiting-bag/contamination-detection-ozkwx),
+project license CC BY 4.0. Published project metrics are not local farm validation.
+Ultralytics licensing is described by its
+[official license page](https://www.ultralytics.com/license); consult the applicable
+terms for your deployment. See [CONTRIBUTING.md](CONTRIBUTING.md) for repository
+conventions and protected files.

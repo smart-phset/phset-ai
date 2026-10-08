@@ -2,16 +2,16 @@
 
 ## Current status
 
-Status: IN_PROGRESS
+Status: COMPLETE — Phase 7 implementation and runtime acceptance; delivery pending
 
 Current branch:
 `feat/live-camera`
 
 Last verified commit:
-`a76e5a4d6316fffa808a69cc47fa9c4447165dee`
+`8b4f97c675798cb257c6991c87f3b7882d2e1d03`
 
 Last updated:
-2026-10-08T17:06:37.436760+07:00
+2026-10-08T17:14:40.642111+07:00
 
 ## Goal
 
@@ -28,10 +28,14 @@ and SmartPhset verdict behavior.
 - [x] Phase 4 — live-camera integration
 - [x] Phase 5 — evaluation tooling
 - [x] Phase 6 — documentation and final validation
+- [x] Phase 7 — AI / Spring / PostgreSQL integration
+- [ ] Phase 8 — ESP32 sensor/actuator / MQTT / backend
+- [ ] Phase 9 — frontend / backend
+- [ ] Phase 10 — complete system acceptance
 
 ## Current phase
 
-Phase 6 — documentation and final validation COMPLETE. All planned implementation phases and automated gates passed. Final checkpoint commit pending; delivery subject to the GitHub DNS blocker recorded below. Hardware/live-service acceptance and real-data evaluation remain manual follow-up.
+Phase 7 — AI / Spring / PostgreSQL integration COMPLETE. Real normal-environment acceptance passed; final delivery pending separate repository commits/pushes. Historical blockers below are superseded by the final acceptance entry. Phase 8 has not started.
 
 ### Completed in this phase
 
@@ -416,3 +420,229 @@ Actual installed protected stack: ultralytics 8.4.71, torch 2.12.1+cpu, torchvis
 - Commit, attempt normal push origin feat/live-camera, inspect final status. If DNS fails, leave commit locally with clean working tree and report SHA for external push; no post-commit log-only update. On next work verify delivered SHA from Git, do not restart phases.
 - Automated implementation is ready for PR review once final commit is delivered. Hardware/manual integration and representative data acceptance remain release gates before any production-quality claim. No PR/merge/promotion performed automatically.
 - Remaining recommended work: run documented manual equipment/backend checks; collect balanced independently labeled grow-room samples; evaluate both providers, review misses/false alerts/availability/latency and explicitly select deployment; record actual results/configuration in a future coherent checkpoint. No additional planned implementation phase remains.
+
+
+## Phase 7 — AI / Spring backend / PostgreSQL integration
+
+Status: IN_PROGRESS, NOT COMPLETE. Current blockers require normal runtime access.
+Date: 2026-10-08. This is the authoritative current resume section.
+
+### Git reconciliation / scope
+
+- Read work log, inspected both repositories' status/branches/log -10/remotes before edits. AI SmartPhset-AI / phset-ai on feat/live-camera was clean, HEAD and recorded origin match delivered Phase6 8b4f97c675798cb257c6991c87f3b7882d2e1d03. User confirms external push; no new remote fetch claimed. Phases0–6 provider/model plan complete; SmartPhset system is not complete.
+- Backend actual path ../api, remote https://github.com/smart-phset/phset-api.git, branch main, starting HEAD 3f511a0 (add detection ingestion and retrieval endpoints), matching recorded origin/main. Only pre-existing change was application.yaml: stray standalone z before server. Asked user; explicit approval received to remove only z. Removed it; file now matches HEAD. Other config/secrets untouched. No branch switch/commit/push or unrelated cleanup.
+- Phase7 excludes frontend, MQTT/firmware/model/training/threshold changes; completion needs actual publisher -> Spring -> PostgreSQL evidence, not mocks alone.
+
+### Inspection/research / exact contract
+
+- Reviewed actual backend controller/service/DTO/entity/repositories, V3 migration, security/JWT stub, application configuration and all existing backend AI tests. Reviewed Python publisher/camera/verdict/provider contracts and existing publisher/camera tests. Separate backend permanent log created at api/docs/ai-integration-work-log.md.
+- API: POST /api/ai/detections; GET /api/ai/detections/latest?camera=...; history GET /api/ai/detections?camera=...&limit=... (NO /history suffix). Port 9090 verified, Flyway enabled, Hibernate validate/JDBC UTC. DB_URL defaults jdbc:postgresql://localhost:5432/smartphset.
+- Python JSON exactly matches DTO: event_id(UUID), camera_id, captured_at(Instant), verdict/message/severity, n_healthy/n_contaminated, max_conf/max_contaminated_conf, width/height/inference_ms and boxes(label/conf/four integer xyxy). No field rename or production change required based on inspection.
+- Controller key app.ai.ingest-key from AI_INGEST_KEY matches AI SMARTPHSET_AI_INGEST_KEY -> X-SmartPhset-AI-Key. Configured valid key accepted; wrong/missing 401 in current implementation. Blank key accepts reachable ingest (not restricted to loopback): documented local dev only. GET routes public. Existing narrow CSRF exemption and permitAll cover detection routes; unrelated anyRequest authenticated unchanged. Prior user 403 cannot be reproduced without live runtime, so no claim of runtime resolution.
+- V3 scans/boxes FK+cascade, unique event_id, TIMESTAMPTZ, confidence constraints preserved. Transaction-level PostgreSQL advisory lock serializes duplicates, first POST201 / duplicate200 original record. Camera-scoped latest/history ordered captured_at,created_at,UUID DESC; limits1–100. Migrations not replaced. Actual DB behavior still requires integration run.
+- Publisher bounded/nonblocking, one request/one replaceable pending snapshot and drop-on-error unchanged. It does not retry; replay same payload remains idempotent. Integer coordinates are preserved; out-of-frame provider boxes currently rejected by backend (no speculative clipping or weakened validation). Current service does not enforce complete counts-to-boxes equality; no unrelated validation redesign.
+- Official research: https://docs.spring.io/spring-security/reference/servlet/exploits/csrf.html (current 7.1.1 docs; selective machine-request exemption); https://java.testcontainers.org/modules/databases/postgres/ (existing PostgreSQL container setup); https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS (transaction lock semantics). Existing Boot4.1.1 / Java25 / PostgreSQL18 stack retained, no external versions upgraded or newly claimed latest release for unrelated libraries.
+
+### Files created/modified and implementation decisions
+
+AI created:
+- tests/fixtures/ai-detection.json (golden actual payload, shared byte-for-byte with backend fixture)
+- tests/test_backend_contract.py (golden generation through actual verdict/publisher; 201/200 accepted acknowledgements)
+- tests/test_backend_live_integration.py (explicit opt-in normal-terminal real Spring test, no paid inference/hardware)
+- docs/backend-integration.md (exact routes/contract/security/idempotency, runtime procedure, honest incomplete state)
+AI modified: CODEX_WORK_LOG.md only. No publisher/camera/model/dependency production changes.
+
+Backend modified: AiDetectionContractTests.java (shared Python fixture validation/deserialization/round-trip); AiDetectionIntegrationTests.java (camera isolation, timestamps/boxes, deterministic ties, invalid verdict/severity/timestamp).
+Backend created: src/test/resources/ai-detection.json; docs/ai-integration-work-log.md.
+Approved removal of pre-existing YAML typo restored configuration to HEAD, so not an additional pending source diff.
+Shared fixture SHA256 1a251203c28c3d45975547eb6fb4f655785222f134e46744fd1ebc54818fb837.
+
+Live test intentionally skipped by default, opt-in SMARTPHSET_INTEGRATION_BACKEND_URL. It posts synthetic unique-camera events, checks duplicate/status/boxes/timestamp/latest/history/limits, keyed failures or open-dev mode, then real background BackendPublisher POST and database-backed retrieval. Leaves test records in target DB; explicitly use a test/dev DB. No key output. Snapshot availability/latency/camera path unaffected.
+
+### Tests/results and runtime attempts
+
+- Focused new AI contract suite: PASS2, .004s. Existing publisher focused suite PASS9, .022s, including outages/nonblocking/latest pending. Full AI: 84 discovered, 83 PASS, 1 opt-in live test SKIPPED, 1.124s. Skipped live test is NOT integration success.
+- AI compileall detectors/tests/tools/live_camera/backend_publisher/bridge PASS. uv pip check PASS58 compatible. Both repository git diff --check PASS; shared fixture hashes match.
+- Backend changed tests compile with Java25 javac against cached binary jars/existing compiled production classes. Three DTO validation test methods executed directly and PASS using temporary runner: old round-trip/coercion plus new publisher fixture. This is limited contract evidence, NOT full Gradle/JUnit/database success. Manual cached runner emitted SLF4J no-binder warning; no repo runtime dependency changes.
+- First Gradle wrapper attempt failed because home Gradle cache is read-only. Retried cached Gradle9.7.1 with writable copied /tmp cache and actual full Java25 Android Studio JBR; failed before tests: FileLockContentionHandler could not determine usable wildcard IP. Default Java21 unsuitable; Toolbox Java25 lacks instrument/javac; Android Studio Java25 compile works.
+- Docker info failed permission denied /var/run/docker.sock.
+- Isolated PostgreSQL18.6 initdb in /tmp succeeded; server start FAILED: could not create IPv4 socket 127.0.0.1, Operation not permitted. No PostgreSQL server left running and no configured/user database touched. Existing pg_isready reports no server. localhost9090 probe HTTP000, no running backend verified.
+- Thus Flyway application/table persistence, live HTTP/auth/duplicate/latest/history and actual publisher-Spring-DB round-trip remain unverified here. No ESP32 GUI, real hosted inference or hardware acceptance claimed.
+
+### Current Git state / blockers / exact resume actions
+
+AI branch feat/live-camera HEAD8b4f97c: M CODEX_WORK_LOG.md; untracked docs/backend-integration.md, tests/fixtures/ai-detection.json, tests/test_backend_contract.py, tests/test_backend_live_integration.py.
+Backend branch main HEAD3f511a0: two modified Java test files; untracked shared fixture and docs/ai-integration-work-log.md. No staged files, commits or pushes. Preserve all unfinished work; do not recreate it.
+
+1. Restore normal environment access to socket binding/Docker (sandbox approval unavailable); required real acceptance cannot run inside this restricted execution environment. No source fix can grant those OS capabilities. Read both logs and reconcile Git before resuming.
+2. Normal terminal: in api with Java25 + Docker, run ./gradlew test and ./gradlew build; inspect full test results, fix any actual failure. Do not treat manual cached DTO checks as full backend validation.
+3. Start dev PostgreSQL/backend on9090 with private DB config, optional AI_INGEST_KEY. Follow docs/backend-integration.md. In AI run SMARTPHSET_INTEGRATION_BACKEND_URL=http://localhost:9090 .venv/bin/python -m unittest discover -s tests -p test_backend_live_integration.py -v, matching private SMARTPHSET_AI_INGEST_KEY. Repeat keyed/unkeyed backend configurations. Record actual HTTP/database/Flyway evidence; no keys in results.
+4. Once full backend tests/build and real publisher-Spring-PostgreSQL acceptance pass, rerun full AI/syntax/diff/compatibility gates, update BOTH logs status COMPLETE with exact results, review only intended files, then independently commit/push. Proposed AI message test(ai): verify Spring detection publisher integration; backend test(api): verify AI detection integration (revise if fixes become necessary). No commit while required gates remain blocked.
+5. Reconcile delivery independently; only then Phase8 ESP32 sensor/actuator-MQTT-backend. Phase9 frontend, Phase10 end-to-end acceptance. Do not start those now.
+
+## Phase 7 resume — timestamp precision defect (2026-10-08)
+
+Status: IN_PROGRESS / NOT COMPLETE. No staging, commits or pushes.
+Read both logs and reconciled both Git states; preserved all previous unfinished
+Phase7 files. Backend main HEAD3f511a0; AI feat/live-camera HEAD8b4f97c. No unexpected
+user changes. User reports successful real PostgreSQL/Spring runtime in normal
+terminal, and live test first/duplicate timestamp equality failure. Actuator403
+is separate; no security changes.
+
+### Investigation / correction
+
+Actual service initially returned original in-memory AiScan after saveAndFlush;
+duplicates reload persisted entity. createdAt=Instant.now(), capturedAt=request
+Instant, DTO exposes both; PostgreSQL TIMESTAMPTZ stores microseconds. The fixture
+captured_at has exact .123456 precision; created_at likely differs in user's
+reported failure. Exact live differing fields remain awaiting normal-terminal
+capture; do not claim they were independently observed. Updated opt-in assertion
+adds explicit initial/duplicate differing-field JSON diagnostics, retaining strict
+whole-response equality and all timestamp comparisons.
+
+Backend source fix: use managed entity returned by saveAndFlush, refresh it from
+DB before mapping first201. Assigned UUIDs can trigger merge, so refreshing original
+s is unsafe. This gives canonical persisted timestamp representation and retains
+original duplicate200/DTO/security/idempotency/order behavior. No truncation or
+manual rounding/migration. Added backend regression for sub-microsecond capture
+values below/above half-microsecond and rollover; strict first/duplicate/latest/
+history equality; both timestamps compared to DB values and PostgreSQL CAST oracle.
+
+Research official PostgreSQL18 datetime docs, Jakarta Persistence3.2 refresh API,
+Spring Data JPA entity-persistence/save docs; full links/findings recorded in backend
+log. Independently verified rounding via isolated /tmp PostgreSQL18.6 single-user
+mode: .123456100 -> .123456, .123456900 -> .123457, .999999900 -> next second.
+No network/user DB touched; that is DB rounding evidence, not end-to-end evidence.
+
+### Validation / current blockers
+
+- Java25 cached javac compile of corrected service/changed integration test PASS
+  (Jackson asText deprecation note); not full Gradle test/build evidence.
+- AI full isolated suite: 84 discovered, 83 PASS, 1 live test SKIPPED, 1.871s.
+  Syntax/diff checks PASS; equality test was not weakened.
+- Required focused Gradle AI tests, full ./gradlew test and ./gradlew build retried
+  with Java25 and writable cached Gradle home; each FAILED before execution:
+  FileLockContentionHandler cannot determine usable wildcard IP.
+- Explicit live-test attempt with SMARTPHSET_INTEGRATION_BACKEND_URL localhost9090
+  FAILED BEFORE POST: socket PermissionError Operation not permitted. User's normal
+  runtime works but this Codex sandbox still cannot create localhost sockets.
+- User asked via async clarification to rerun diagnostic against old JVM before
+  restart and provide exact field differences. Do not require or output secrets.
+- No running services stopped/restarted here, no paid hosted calls or Phase8 work.
+
+### Files / exact next steps
+
+Additional backend production modification: AiDetectionService.java. Additional
+backend regression in existing AiDetectionIntegrationTests.java. Additional AI
+change to pending test_backend_live_integration.py: field diagnostic only.
+Both logs updated with evidence limits. All previous pending Phase7 test/fixture/
+doc files retained; no dependency/runtime AI/schema/security change.
+
+1. Capture exact original field diff in normal terminal using updated live test;
+   record it, then test corrected backend with Java25/Docker focused/full/build.
+2. Restart backend from corrected source (existing JVM does not see edits); rerun
+   opt-in AI live test against real Spring/PostgreSQL, keyed/unkeyed behavior.
+3. Only after required tests/build and live test pass mark Phase7 COMPLETE in both
+   logs, review/stage intended files and commit repositories independently. Backend
+   proposed message fix(api): return persisted detection timestamps; AI message
+   test(ai): verify Spring detection publisher integration. Never commit a partial
+   validation checkpoint. No Phase8 until green and delivery reconciled.
+
+## Confirmed runtime field diff — 2026-10-08
+
+User reran the diagnostic against real Spring/PostgreSQL and confirmed the ONLY
+initial/duplicate difference is created_at:
+- initial: 2026-10-08T10:27:48.472512510Z
+- duplicate: 2026-10-08T10:27:48.472513Z
+No other field differs. This replaces the earlier provisional field inference.
+Evidence was supplied from the user's normal terminal, not captured by Codex.
+PostgreSQL rounds this value upward; no truncation/ignored-field workaround used.
+
+Reviewed the existing pending fix against that evidence: saveAndFlush's returned
+managed entity is refreshed before mapping first201. Duplicate200 and strict whole
+response equality remain unchanged. Regression compares both timestamps with the
+stored row and first/duplicate/latest/history bodies, including sub-microsecond
+capture inputs and second rollover. DTO/schema/auth/idempotency unchanged.
+
+Retried focused backend AI tests, full Gradle test and build using Java25 and
+writable cached Gradle home: all blocked BEFORE tasks by unusable wildcard IP.
+Focused Python backend suites: 12 discovered, 11 PASS, 1 live SKIP. Manual Java25
+compile of corrected service/test PASS; not a successful Gradle build. Diff checks
+PASS. No commit/push; Phase7 remains IN_PROGRESS.
+
+Next: in normal Java25/Docker terminal run ./gradlew test --tests '*AiDetection*',
+./gradlew test, ./gradlew build. After successful build restart Spring from corrected
+source, keeping PostgreSQL available; rerun the opt-in Python live integration test.
+Do not mark complete or commit until required full/backend/live validation passes.
+
+## Phase 7 final acceptance — COMPLETE (2026-10-08)
+
+This final status supersedes the historical IN_PROGRESS/blocker entries above.
+Implementation/runtime acceptance COMPLETE; remote delivery pending push attempt.
+Both repositories reconciled; only intended Phase7 changes were present. No
+validated source/test changes made after the successful real runtime acceptance.
+
+### Real developer-environment validation
+
+User ran and reported PASS: ./gradlew test --tests '*AiDetection*', ./gradlew test,
+and ./gradlew build. Spring Boot started on localhost:9090 against PostgreSQL18.6.
+Flyway connected, validated all 3 migrations, schema version3 current/up to date.
+Generated local JUnit XML reports independently inspected: 13 tests total,
+0 failures/errors/skips (3 contract,8 AI integration,1 local-mode,1 application).
+initialDuplicateAndQueriesExposeDatabaseCanonicalTimestamps PASS in those reports.
+
+Actual Python BackendPublisher -> Spring -> PostgreSQL acceptance PASS:
+test_publisher_persistence_duplicate_queries_and_auth; 1 test in 1.264s, OK.
+Confirmed persistence/boxes, duplicate first201/replay200, identical canonical
+response bodies, latest/history/camera/limit and applicable ingest authentication.
+Configured-key and open-development behavior also covered by passing backend tests.
+This live validation was performed in the NORMAL DEVELOPER ENVIRONMENT because
+Codex sandbox cannot bind/create localhost sockets; not an independently executed
+Codex live pass. No additional live run required because integration code unchanged.
+
+### Final fix and preserved contract
+
+Only originally differing field was created_at: .472512510Z initial vs .472513Z
+persisted duplicate. Initial POST now maps the managed entity returned by
+saveAndFlush AFTER EntityManager.refresh, returning DB-canonical values. PostgreSQL
+performs rounding; no manual Java truncation or ignored timestamp field. Strict
+whole-response equality retained. DTO schema, event_id idempotency, 201/200,
+authentication, ordering and migrations unchanged. Research official PostgreSQL
+precision/JPA refresh/Spring Data merge behavior recorded above, no new dependency.
+Shared payload fixture verifies exact schema and confidence precision.
+
+### Final safe validation in Codex
+
+Focused Python backend tests: 11 PASS,1 opt-in live SKIP (12 discovered).
+Full AI suite: 83 PASS,1 opt-in live SKIP (84 discovered),2.513s.
+Compileall and integration imports PASS; uv pip check PASS58 compatible packages.
+Both repository diff checks PASS; only intended source/tests/fixtures/docs/logs
+included, no generated reports/CSV/build outputs/secrets staged.
+Final backend focused/full/build reruns attempted but blocked BEFORE task execution
+by sandbox FileLockContentionHandler unusable wildcard IP. Successful normal-
+environment results and generated XML above provide backend validation evidence.
+
+### Limitations / intentional non-changes
+
+No real ESP32 hardware acceptance in Phase7, no paid Roboflow inference, no model,
+threshold, camera, backend payload schema, security policy or dependency changes.
+Publisher remains bounded/best-effort and drops failed snapshots; outage tests pass.
+Out-of-frame coordinates remain rejected by existing backend validation. Actuator403
+is separate; unrelated security was not weakened. Blank ingest key is open local-dev
+mode, configure privately before exposure. Synthetic acceptance leaves test records.
+
+### Delivery and next exact actions
+
+GitHub DNS preflight FAILED inside Codex: Could not resolve host github.com.
+Commit validated changes independently and attempt each existing branch push.
+If push fails retain commits, report exact SHA/branch/message in chat; no second
+log-only commit/amend, and no Phase8 until external pushes are reconciled.
+After delivery: Phase8 ESP32 sensor/actuator <-> MQTT <-> Spring integration;
+read both logs/Git first and record previous Phase7 SHAs as normal Phase8 work.
+Frontend remains Phase9; complete system acceptance Phase10.
+
+AI files created: docs/backend-integration.md, tests/fixtures/ai-detection.json,
+tests/test_backend_contract.py, tests/test_backend_live_integration.py.
+AI files modified: CODEX_WORK_LOG.md. No production Python/dependency changes.
+Exact AI commit message: test(ai): verify backend detection integration.
+Backend files/fix tracked in api/docs/ai-integration-work-log.md.

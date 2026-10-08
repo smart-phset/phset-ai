@@ -1,0 +1,37 @@
+{
+  "event_id": "b78b021b-4231-45cd-8f29-afd72f3fa317",
+  "camera_id": "esp32-cam",
+  "captured_at": "2026-10-08T10:00:00.123456Z",
+  "verdict": "contamination_suspected",
+  "severity": "AMBER",
+  "message": "Possible contamination",
+  "n_contaminated": 1,
+  "n_healthy": 1,
+  "max_conf": 0.99,
+  "max_contaminated_conf": 0.799999999,
+  "width": 1280,
+  "height": 720,
+  "inference_ms": 84,
+  "boxes": [
+    {
+      "label": "healthy",
+      "conf": 0.99,
+      "xyxy": [
+        500,
+        180,
+        800,
+        650
+      ]
+    },
+    {
+      "label": "contaminated",
+      "conf": 0.799999999,
+      "xyxy": [
+        120,
+        180,
+        450,
+        650
+      ]
+    }
+  ]
+}

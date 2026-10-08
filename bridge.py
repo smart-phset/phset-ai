@@ -15,7 +15,7 @@ Open http://<laptop-ip>:8000/ in any browser on the same Wi-Fi for a live status
 Run (from the repo folder, with the venv active; see docs/run-the-bridge.md):
   python bridge.py --api-key <key>                  # server only, port 8000, reachable on the LAN
   python bridge.py                                  # no key: only for a quick test on your own Wi-Fi
-  python bridge.py --poll http://192.168.1.50/capture --every 60
+  python bridge.py --poll http://10.218.60.52/capture --every 60
   python bridge.py --usb 0 --every 30               # laptop / USB webcam
 Model: models/best.pt next to this file (override with --weights or SMARTPHSET_WEIGHTS).
 Logs:  bridge_log/ next to this file (override with --log or SMARTPHSET_LOG_DIR).

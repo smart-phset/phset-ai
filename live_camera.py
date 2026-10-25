@@ -7,6 +7,9 @@ import math
 import os
 from pathlib import Path
 import time
+import signal
+
+from live_stream import LatestFrame, streaming_server
 
 from backend_publisher import BackendPublisher
 from detectors.types import DetectionBox
@@ -274,6 +277,7 @@ def run_camera(
     args,
     cv2_module=None,
     model_factory=None,
+    stream_state=None,
 ):
     # Lazy imports keep tests independent
     # of torch/OpenCV and camera hardware.
@@ -290,7 +294,12 @@ def run_camera(
     hosted = args.model_provider == "roboflow"
 
     try:
-        detector = build_detector(args, model_factory)
+        try:
+            detector = build_detector(args, model_factory)
+        except Exception:
+            if stream_state is not None:
+                stream_state.unavailable("inference_unavailable")
+            raise
 
         camera, camera_name = (
             open_video_source(
@@ -325,9 +334,8 @@ def run_camera(
             ),
         )
 
-        executor = ThreadPoolExecutor(
-            max_workers=1
-        )
+        if stream_state is None:
+            executor = ThreadPoolExecutor(max_workers=1)
 
         pending = None
         summary = summarize_result()
@@ -344,15 +352,15 @@ def run_camera(
             "SmartPhset Live AI running."
         )
         print(
-            "Point the ESP32-CAM at "
+            "Point the camera at "
             "mushroom bags."
         )
         print(
-            "Press q or Ctrl+C to quit."
+            "Press Ctrl+C to quit." if stream_state else "Press q or Ctrl+C to quit."
         )
         print()
 
-        while True:
+        while stream_state is None or not stream_state.stopped.is_set():
 
             ok, frame = camera.read()
 
@@ -373,10 +381,12 @@ def run_camera(
                 )
 
                 camera.release()
-
-                time.sleep(
-                    args.reconnect_delay
-                )
+                if stream_state is not None:
+                    stream_state.unavailable()
+                    if stream_state.stopped.wait(args.reconnect_delay):
+                        break
+                else:
+                    time.sleep(args.reconnect_delay)
 
                 camera, camera_name = (
                     open_video_source(
@@ -392,9 +402,10 @@ def run_camera(
                     )
 
                     camera.release()
-                    time.sleep(
-                        args.reconnect_delay
-                    )
+                    if stream_state is not None:
+                        stream_state.stopped.wait(args.reconnect_delay)
+                    else:
+                        time.sleep(args.reconnect_delay)
                     continue
 
                 print(
@@ -405,6 +416,22 @@ def run_camera(
                 continue
 
             now = time.monotonic()
+
+            if stream_state is not None:
+                # The same sole capture/producer owns inference, annotation and JPEG.
+                # Annotate the exact frame inferred, never boxes from an older frame.
+                try:
+                    summary = infer_detector(detector, frame)
+                except Exception:
+                    stream_state.unavailable("inference_unavailable")
+                    raise
+                if publisher.url:
+                    publisher.offer(summary, camera_name, time.monotonic())
+                display_frame = draw_overlay(cv2, frame.copy(), summary,
+                                             1 / max(time.monotonic() - now, 1e-9), 0)
+                stream_state.publish(cv2, display_frame)
+                stream_state.stopped.wait(max(0, 1 / args.fps - (time.monotonic() - now)))
+                continue
 
             # ---------------------------------
             # Collect completed provider inference
@@ -523,7 +550,8 @@ def run_camera(
 
         finally:
             try:
-                cv2.destroyAllWindows()
+                if stream_state is None:
+                    cv2.destroyAllWindows()
 
             finally:
                 try:
@@ -544,6 +572,9 @@ def parse_args(argv=None):
     parser.add_argument("--roboflow-model-id", default="contamination-detection-ozkwx/1")
     parser.add_argument("--roboflow-api-url", default="https://serverless.roboflow.com")
     parser.add_argument("--imgsz", type=int, default=416)
+    parser.add_argument("--serve", action="store_true", help="Serve annotated MJPEG without a desktop window")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8001)
 
     parser.add_argument(
         "--cam",
@@ -627,6 +658,8 @@ def parse_args(argv=None):
     )
 
     args = parser.parse_args(argv)
+    if not 1 <= args.port <= 65535:
+        parser.error("--port must be between 1 and 65535")
     if args.imgsz <= 0:
         parser.error("--imgsz must be greater than zero")
     if not args.roboflow_model_id.strip():
@@ -706,7 +739,30 @@ def main():
     args = parse_args()
 
     try:
-        run_camera(args)
+        if args.serve:
+            state = LatestFrame("esp32-cam" if args.source else f"webcam-{args.cam}",
+                                stale_after=max(10, 3 / args.fps))
+            server, thread = streaming_server(state, args.host, args.port)
+            previous = {sig: signal.signal(sig, lambda *_: state.close())
+                        for sig in (signal.SIGINT, signal.SIGTERM)}
+            try:
+                try:
+                    run_camera(args, stream_state=state)
+                except Exception:
+                    # Keep health reachable to distinguish camera failure from offline.
+                    if state.health()["status"] != "inference_unavailable":
+                        state.unavailable()
+                    print("Live producer unavailable; restart the service after checking camera/model.")
+                    state.stopped.wait()
+            finally:
+                state.close()
+                server.shutdown()
+                server.server_close()
+                thread.join()
+                for sig, handler in previous.items():
+                    signal.signal(sig, handler)
+        else:
+            run_camera(args)
 
     except (
         RuntimeError,

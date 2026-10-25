@@ -2,16 +2,18 @@
 
 ## Current status
 
-Status: COMPLETE — Phase 7 implementation and runtime acceptance; delivery pending
+Status: LIVE ESP32-CAM AI INTEGRATION PATH VERIFIED; frontend browser acceptance PENDING.
+REAL MUSHROOM RECOGNITION DEFERRED / NOT VERIFIED (no real mushrooms available).
+Phase 7 delivery and Phase 9 monitoring delivery are reconciled in the latest entry below.
 
 Current branch:
 `feat/live-camera`
 
 Last verified commit:
-`8b4f97c675798cb257c6991c87f3b7882d2e1d03`
+`c2b8b0091d9c256c43cc51211c5ac1ad29923086`
 
 Last updated:
-2026-10-08T17:14:40.642111+07:00
+2026-10-10
 
 ## Goal
 
@@ -35,7 +37,9 @@ and SmartPhset verdict behavior.
 
 ## Current phase
 
-Phase 7 — AI / Spring / PostgreSQL integration COMPLETE. Real normal-environment acceptance passed; final delivery pending separate repository commits/pushes. Historical blockers below are superseded by the final acceptance entry. Phase 8 has not started.
+ESP32-CAM -> live local inference -> Spring -> PostgreSQL -> latest read VERIFIED.
+Frontend visual acceptance remains pending user observation. Earlier phase
+status/next-action sections below are historical; use the latest checkpoint below.
 
 ### Completed in this phase
 
@@ -646,3 +650,179 @@ tests/test_backend_contract.py, tests/test_backend_live_integration.py.
 AI files modified: CODEX_WORK_LOG.md. No production Python/dependency changes.
 Exact AI commit message: test(ai): verify backend detection integration.
 Backend files/fix tracked in api/docs/ai-integration-work-log.md.
+
+## Live AI-to-frontend acceptance preparation — 2026-10-10
+
+Status: SOFTWARE PREPARATION COMPLETE; live camera/frontend acceptance NOT VERIFIED.
+Latest user instruction prohibits commits/pushes/merges and supersedes historical
+automatic checkpoint rules. No camera/hosted inference/publisher started here.
+
+### Reconciliation and source audit
+
+Read the AI work log completely, backend ai-integration-work-log.md completely,
+and frontend CODEX_WORK_LOG.md completely before edits. Reconciled four initially
+clean trees, all matching their locally recorded upstream refs (0 ahead/behind):
+- AI feat/live-camera c2b8b0091d9c256c43cc51211c5ac1ad29923086
+- api main f66e05dec227e5a2714efa701a01ccd0cd31e3c6
+- client feat/grow-room-monitoring edb5152ac51b0651527a42d54d23fa584c1396f2
+- smart-things main bbf860d06b0855e3f3f6fc7bb4b5327fda48e62a
+User confirms frontend push. No fresh remote fetch claimed. Prior commits intact;
+no frontend merge, firmware upload/change or runtime service assumption.
+
+Inspected current live_camera.py, both detector providers/types, BackendPublisher,
+AI tests/docs, Spring controller/service/request/response/error handler/repository,
+V3 schema/security/config/test contracts, frontend proxy/parser/AI card/history.
+Existing endpoints and DTOs suffice; NO runtime code/dependency change necessary.
+Webcam --cam N -> webcam-N; network --source -> esp32-cam. Prefer webcam0/local CPU
+as first supported manual attempt; hardware availability/reliability not established
+here (no visible /dev/video nodes). ESP32-CAM address must come from actual hardware.
+No separate configurable camera ID CLI; frontend server camera must match source.
+
+Local YOLO best.pt and hosted Roboflow share normalized verdict/publisher contract.
+Local loads once; one inference in flight. Hosted no fallback, failure/expiry GREY;
+SDK request deadline and internal retries preserved. Camera reconnect and publishing
+remain unchanged. Publisher drops failed events, no retries; first completion then
+interval/state-change snapshots. Camera startup/overlay is NOT delivery evidence:
+current publisher logs failures only, with NO success log. New persisted result and
+matching authenticated Next response are required; no success log invented.
+
+Exact audited contracts, credentials, four-terminal commands, supported source
+alternatives and evidence checklist: docs/live-frontend-acceptance.md. Ingest key
+Spring AI_INGEST_KEY matches Python SMARTPHSET_AI_INGEST_KEY header; blank Spring
+key permits any reachable ingest, nonblank requires exact match. AI reads public;
+Next authenticates browser session and sends no AI/IoT credentials to AI reads.
+Frontend handles latest404/history empty, errors, stored timestamp/camera and both
+actual confidence summaries; unavailable detections never healthy. No mock fallback.
+Compare persisted id and raw ISO/confidence values across reads; UI renders local
+time and percent rounded to one decimal. Database canonical timestamp rounding is
+intentional. No new model-quality or disease verification claimed.
+
+### Validation results and limits
+
+- AI full existing suite: 84 discovered, 83 PASS, 1 opt-in live test SKIP, 2.306s.
+  Camera startup output in tests is mocked, not live hardware evidence.
+- AI compileall, CLI --help and git diff --check PASS.
+- uv pip check PASS: 58 compatible installed packages; no dependency install/change.
+- Frontend npm run test PASS12/12; npm run lint and npm run typecheck PASS against
+  currently installed stack. No frontend source changes made.
+- Frontend npm run build attempted with actual pinned Next16.3.8: sandbox Turbopack
+  CSS worker cannot bind port (Operation not permitted). No new build pass claimed.
+  User's previous successful normal-environment Phase9 build remains historical
+  acceptance evidence; run npm run build normally if a fresh artifact is needed.
+- Required focused Gradle '*AiDetection*' attempted using Java25/writable /tmp
+  Gradle home: wrapper distribution fetch blocked by socket Operation not permitted.
+  Retried installed Gradle9.7.1: blocked BEFORE tests by FileLockContentionHandler
+  unusable wildcard IP. No new focused DB integration/full Gradle pass claimed.
+- Isolated cached JUnit runner executed existing AiDetectionContractTests:3/3 PASS,
+  zero failures/skips, against unchanged compiled backend classes. This does NOT
+  validate current live PostgreSQL/latest/history; those require normal runtime.
+  Backend source unchanged, so no full test/build change gate triggered.
+
+### Scoped files and next action
+
+Modified CODEX_WORK_LOG.md; created docs/live-frontend-acceptance.md. Documentation
+only. Backend/frontend/firmware tracked files unchanged; secrets unread/unmodified.
+No staging/commit/push/merge, synthetic DB fixture publish, or real hardware test.
+
+User should run the four-terminal guide, observe completed inference on actual
+frames, confirm new stored result after session start, then match the same persisted
+id/camera/capture timestamp/verdict/counts/confidence in Next API and Mushroom Health
+UI/history. Stop camera only after storage confirmed, then re-read latest to avoid
+racing ongoing snapshots. Report actual observations before marking VERIFIED.
+
+Still deferred: actual water pump/load, physical fan/light, soil sensor/calibration/
+telemetry, remaining physical actuator safety, representative model-quality
+assessment, hosted-provider live acceptance (unless explicitly tested), Khmer review.
+Browser-to-GPIO27 physical relay control remains user-verified from Phase9.
+
+## Resumed live ESP32-CAM checkpoint — 2026-10-10
+
+This supersedes the earlier pending real-camera preparation status. Evidence is
+user-reported physical/runtime observation supplied on resume, not a fresh runtime
+execution by Codex. No old process or terminal environment assumed to survive.
+
+All four expected branches/HEADs match the reconciliation above and cached upstream
+refs (0 ahead/behind); no fresh fetch claimed. Backend/frontend/firmware are clean.
+AI starts with only CODEX_WORK_LOG.md modified and docs/live-frontend-acceptance.md
+untracked. Existing valid preparation/audit/validation documentation preserved.
+
+LIVE AI INTEGRATION PATH: VERIFIED. ESP32-CAM moved onto the laptop network;
+real HTTP MJPEG frames reached live_camera.py, local YOLO executed, BackendPublisher
+sent the result to Spring POST /api/ai/detections, PostgreSQL persisted it, and
+GET /api/ai/detections/latest?camera=esp32-cam returned this real record:
+
+```json
+{
+  "id": "f6b21953-f0b5-4054-8665-cbfe78d7a7da",
+  "event_id": "7cf56612-46a1-46a9-9fb4-885c59c6b87c",
+  "camera_id": "esp32-cam",
+  "captured_at": "2026-10-10T11:17:49.137417Z",
+  "verdict": "no_detection",
+  "severity": "GREY",
+  "message": "Could not inspect",
+  "n_contaminated": 0,
+  "n_healthy": 0,
+  "max_conf": 0.0,
+  "max_contaminated_conf": 0.0,
+  "width": 640,
+  "height": 480,
+  "inference_ms": 84,
+  "created_at": "2026-10-10T11:17:49.267701Z",
+  "boxes": []
+}
+```
+
+An honest no_detection is successful integration/inference evidence, not a failure
+and not proof of healthy/contaminated recognition or disease detection. Backend
+latest/history retrieval is verified in the supplied checkpoint; the exact new
+record above is specifically evidenced by latest retrieval.
+
+REAL MUSHROOM RECOGNITION: DEFERRED / NOT VERIFIED. No real mushrooms available;
+actual mushroom detection, healthy/contaminated classification, disease recognition
+and precision/recall/accuracy on real mushrooms have not been accepted.
+
+Current frontend source reconfirmed: monitoring-server.ts reads
+SMARTPHSET_AI_CAMERA_ID; monitoring-proxy.ts sends that camera to Spring latest
+and history (limit 20), validates response camera, preserves id/raw confidence and
+returns authenticated JSON. /api/monitoring/detection wraps {cameraId,detection};
+/api/monitoring/detections wraps {cameraId,detections}. Overview / renders
+GrowRoomDashboard and its AI / Mushroom Health card; /history renders stored results.
+The proxy intentionally omits event_id, width/height, inference_ms and boxes.
+Match those in Spring; match id/camera/raw timestamps/confidences in Next JSON.
+UI omits id and raw confidence: no_detection displays Could not inspect and
+Unavailable confidence, zero healthy/flagged counts on Overview, GREY in history.
+Browser Asia/Phnom_Penh capture time is 2026-10-10 18:17:49 (UI local formatting).
+
+Frontend acceptance PENDING browser confirmation of this same persisted record.
+Set only SMARTPHSET_AI_CAMERA_ID=esp32-cam in existing private .env.local if needed,
+retain every other setting and restart Next. No secret file read or modified here.
+Exact browser/GET commands and later-record handling are in the acceptance guide.
+
+Physical relay ON/OFF and approximately 10-second firmware pump auto-off remain
+user-observed; actual water pump/load, fan, light, soil sensor, soil ADC calibration,
+soil telemetry and remaining actuator physical safety remain DEFERRED/UNVERIFIED.
+No real soil sensor installed; floating GPIO34 is invalid soil data.
+
+Documentation-only update; runtime source/dependencies unchanged in all four repos.
+No integration bug found. No new runtime/test pass inferred from previous reports;
+prior AI 83 PASS/1 opt-in SKIP, frontend 12 PASS/lint/typecheck, cached backend
+3 contract PASS and normal local production-build PASS retain their original scope.
+Documentation/diff checks performed on resume; no runtime suite needed for prose.
+No staging, commit, push, amend or merge. STOP for user browser result. Only after
+matching frontend confirmation finalize docs and create/push a NEW AI checkpoint:
+`docs(ai): record verified live ESP32-CAM integration acceptance`.
+
+
+## Live stream checkpoint — 2026-10-25
+
+User reports real laptop webcam live detection physically working, and the
+ESP32-CAM feed reaching the AI/frontend pipeline. This is user-observed pipeline
+evidence, not a new physical test by Codex or a claim of improved detection
+accuracy. ESP32-CAM flash/image/brownout acceptance remains pending in the
+separate, unversioned CameraWebServer directory.
+
+Checkpoint verification: existing unittest suite ran 91 tests, 90 passed and
+one opt-in backend integration test skipped. No physical webcam required.
+MJPEG service, shared latest annotated frame, health endpoint, BackendPublisher,
+source selection, tests and runbooks are included in this checkpoint.
+User authorizes a new commit and push on the current branch; no history rewrite.

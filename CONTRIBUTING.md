@@ -6,18 +6,18 @@ How the team works on the SmartPhset AI. Start with the [README](README.md) and
 ## Who owns what
 
 - **This repo (the AI and `bridge.py`):** Hout.
-- **The website:** Hout, in [SmartPhset-Prototype-Frontend](https://github.com/menghoutishere-code/SmartPhset-Prototype-Frontend).
-- **The Node backend and the hardware:** the engineer, who calls this repo's bridge.
+- **The website:** Hout, in [SmartPhset-Prototype-Frontend](https://github.com/smart-phset/phset-client).
+- **The Spring backend and the hardware:** the engineer; Spring receives live detection snapshots.
 
-The bridge's reply format ([docs/bridge-api.md](docs/bridge-api.md)) is shared with the website and the backend.
+The legacy photo bridge's reply format ([docs/bridge-api.md](docs/bridge-api.md)) is shared with the website and the backend.
 **Do not rename or remove a reply field** without agreeing it with both, and updating the website's
 `src/app/api/images/route.ts` and `docs/api-contract.md` at the same time. Adding a new field is fine.
 
 ## Workflow
 
-1. Make a branch: `git switch -c fix/short-name` (or `feat/...`, `model/...`, `docs/...`).
-2. Commit, push the branch, open a pull request to `main` saying what changed and how you tested it.
-3. Hout reviews and merges. Small doc fixes can go straight to `main`.
+1. Start from the current feature branch named in README.md, then make a branch: `git switch -c fix/short-name` (or `feat/...`, `model/...`, `docs/...`).
+2. Commit, push the branch, open a pull request to the agreed integration branch saying what changed and how you tested it.
+3. Hout reviews and merges. Use a feature branch and Pull Request for documentation changes too.
 
 From Oct 20 to the National Challenge (Oct 23-25, 2026), only bug fixes, and nothing merged without testing on the
 demo laptop.
@@ -28,9 +28,9 @@ Start the bridge and check the sample photos:
 
 ```powershell
 $env:BRIDGE_API_KEY = "<any test key>"
-python bridge.py --api-key $env:BRIDGE_API_KEY --port 8001
+python bridge.py --api-key $env:BRIDGE_API_KEY --port 8000
 curl.exe -H "Authorization: Bearer <same key>" -H "Content-Type: image/jpeg" `
-  --data-binary "@evidence/demo/image0.jpg" "http://localhost:8001/image?camera=test"
+  --data-binary "@evidence/demo/image0.jpg" "http://localhost:8000/image?camera=test"
 ```
 
 - A sample photo still gets a sensible result, and a request without the key gets `401`.

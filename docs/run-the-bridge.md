@@ -1,5 +1,8 @@
 # Run the bridge
 
+For current native Linux/Windows setup and the separate live service, start with
+[README.md](../README.md). This guide covers the legacy photo bridge.
+
 How to run the AI on the farm laptop and connect it to the website or the Node backend.
 
 ```
@@ -12,8 +15,9 @@ phone / website --> Vercel (smartphset.vercel.app) --tunnel--> laptop: bridge.py
 Needs Python 3.11 and Git.
 
 ```powershell
-git clone git@github.com:menghoutishere-code/SmartPhset-AI.git
-cd SmartPhset-AI
+git clone https://github.com/smart-phset/phset-ai.git
+cd phset-ai
+git switch feat/live-camera
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
@@ -35,7 +39,7 @@ It prints `SmartPhset bridge on http://0.0.0.0:8000/`. Loading the model takes a
 
 **Check it works:**
 - Open `http://localhost:8000/?key=<the key>` and upload a photo from `evidence/demo/`.
-- Or `curl -H "Authorization: Bearer <the key>" http://localhost:8000/status`.
+- Or `curl.exe -H "Authorization: Bearer <the key>" http://localhost:8000/status`.
 
 Other devices on the same Wi-Fi can reach it at `http://<laptop-ip>:8000/`.
 
@@ -89,4 +93,4 @@ In this mode the tunnel points at the backend, and Vercel uses `BACKEND_MODE=api
 | Phone cannot reach `http://<laptop-ip>:8000` | Same Wi-Fi? Allow Python through Windows Firewall (private networks) |
 | Website still shows "Demo data" | `BACKEND_URL` not set, or the site was not redeployed after setting it |
 | Result is "no_detection" | No bag recognised: move closer (20-30 cm), more light, one bag face filling the frame |
-| Port 8000 busy | `python bridge.py --port 8001 ...` and point the tunnel at 8001 |
+| Port 8000 busy | Stop the old bridge process; keep 8001 reserved for live_camera.py |

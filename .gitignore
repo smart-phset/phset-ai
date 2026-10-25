@@ -31,3 +31,5 @@ yolo11n.pt
 Thumbs.db
 .vscode/
 .idea/
+
+!.env.example

@@ -231,9 +231,15 @@ def open_video_source(cv2, args):
             f"{args.cam}"
         )
 
-    camera = cv2.VideoCapture(
-        video_source
-    )
+    if args.source and args.serve:
+        # Open/read timeouts must be supplied at open time for FFmpeg. Without
+        # them a disconnected network camera can block reconnect and SIGTERM.
+        camera = cv2.VideoCapture(video_source, cv2.CAP_FFMPEG, [
+            cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000,
+            cv2.CAP_PROP_READ_TIMEOUT_MSEC, 5000,
+        ])
+    else:
+        camera = cv2.VideoCapture(video_source)
 
     # May reduce latency on backends that support it.
     try:
@@ -309,16 +315,21 @@ def run_camera(
         )
 
         if not camera.isOpened():
-            if args.source:
+            if args.source and stream_state is not None:
+                # Let the normal reconnect loop recover from an initially offline
+                # ESP32-CAM too, retaining the single loaded detector instance.
+                stream_state.unavailable()
+            elif args.source:
                 raise RuntimeError(
                     "Cannot open network video "
                     f"stream: {args.source}"
                 )
 
-            raise RuntimeError(
-                f"Cannot open camera {args.cam}; "
-                "check connection and permissions"
-            )
+            else:
+                raise RuntimeError(
+                    f"Cannot open camera {args.cam}; "
+                    "check connection and permissions"
+                )
 
         print(
             f"Video source opened: "

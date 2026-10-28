@@ -53,6 +53,8 @@ class LatestFrame:
                                         (self.jpeg is not None and self.sequence != sequence), timeout=1)
                 if self.stopped.is_set() or self.status not in ("starting", "ok"):
                     return
+                if self.status == "ok" and time.monotonic() - self.updated >= self.stale_after:
+                    return
                 if self.jpeg is None or self.sequence == sequence:
                     if self.status == "ok" and time.monotonic() - self.updated >= self.stale_after:
                         return
@@ -86,6 +88,7 @@ def streaming_server(state, host="127.0.0.1", port=8001):
                     return
                 self.send_response(200)
                 self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+                self.send_header("X-SmartPhset-Camera-Id", state.camera)
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 self.connection.settimeout(5)

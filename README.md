@@ -1,303 +1,169 @@
-# SmartPhset AI
+# SmartPhset · AI
 
-Mushroom-bag detection using local YOLO or an optional hosted Roboflow provider.
-AI results are suggestions; this model has not been validated on representative
-SmartPhset grow-room data. Confirm findings by inspecting the bag.
+Persistent, authenticated mushroom-bag inference with the existing YOLO weights at
+`models/best.pt`. Browser cameras upload sampled JPEGs; registered shared cameras
+are opened by the worker and served as MJPEG. Video stays out of Spring/PostgreSQL.
+Model outputs are suggestions requiring human inspection; this model has not been
+validated on representative farm data. See [model card](docs/model-card.md).
 
-## Role in SmartPhset
+[Frontend](https://github.com/smart-phset/phset-client) · [API](https://github.com/smart-phset/phset-api) · [Camera firmware](https://github.com/smart-phset/web-cam) · [Hardware](https://github.com/smart-phset/smart-things)
 
-Camera → Python/OpenCV → YOLO → annotated MJPEG →
-[Next.js](https://github.com/smart-phset/phset-client/tree/feat/grow-room-monitoring).
-Separately: AI result JSON → [Spring](https://github.com/smart-phset/phset-api)
-→ PostgreSQL → frontend metadata/history. Video is not stored in Spring.
-The [regular ESP32 repository](https://github.com/smart-phset/smart-things) contains
-the MQTT controller. Camera source, private configuration and Linux/PowerShell
-flashing instructions live in [web-cam](https://github.com/smart-phset/web-cam). The frontend README has the
-[complete startup order](https://github.com/smart-phset/phset-client/blob/feat/grow-room-monitoring/README.md#start-smartphset-from-a-fresh-computerreboot).
-
-`live_camera.py` handles live inputs; `live_stream.py` serves annotated MJPEG with
-`--serve`. `bridge.py` is a separate photo-upload service (port 8000).
-`app.py` is an optional Gradio demo; `webcam.py` is an older standalone demo.
-
-## Requirements
-
-Linux: Git, **Python 3.11**, its venv support, camera access; GUI libraries only
-for desktop preview. The system Python may be newer: explicitly select 3.11.
-Windows: Git for Windows, PowerShell, Python **3.11** with Python launcher `py`,
-and camera access enabled in Windows privacy settings. WSL is not required.
-
-`requirements.txt` pins torch 2.12.1, torchvision 0.27.1, ultralytics 8.4.71,
-numpy 2.3.5, opencv-python 4.10.0.84 and inference-sdk 1.7.3, with the PyTorch
-CPU extra index. GPU is not required. `requirements-extra.txt` adds optional
-Gradio/training/evaluation packages; it is not required for live detection.
-The inspected venv is Python 3.11.17. Windows runtime/hardware validation must
-be performed on the teammate's machine; Linux success is not a Windows test.
-
-## Clone
+## Architecture and files
 
 ```text
-git clone https://github.com/smart-phset/phset-ai.git
-cd phset-ai
-git switch feat/live-camera
+session_service.py       persistent service, authenticated on 127.0.0.1:8002
+live_camera.py           legacy single-source CLI/desktop or :8001 service
+live_stream.py           shared latest-JPEG buffer and legacy HTTP streaming
+backend_publisher.py     optional asynchronous Spring detection publishing
+models/best.pt           tracked trained model; preserve it
+ detectors/              local Ultralytics and optional hosted provider
+bridge.py                separate image-upload service, default :8000
+app.py / webcam.py       older interactive demos
+requirements.txt         runtime pins
+requirements-extra.txt   optional training/evaluation/Gradio tools
+ tests/                  unittest suite, mocked cameras/inference
+ docs/                   contracts, evaluation, model and legacy setup
 ```
 
-Current live service work is on this feature branch, not necessarily main.
-`models/best.pt` is tracked as a binary file, not a Git LFS pointer. Keep the
-existing model; do not replace it just to resolve an environment problem.
+`session_service.py` loads one `LocalUltralyticsDetector` for all sessions. A
+nonblocking lock serializes inference: concurrent jobs receive 429 rather than
+building an unbounded queue. Each browser session has its own random source ID
+and results. Shared-source viewers share one capture worker and its latest frame;
+AI runs while at least one session requests it. Shared detection results are
+copied into analyzing sessions; video may contain worker-drawn boxes.
 
-## Configuration
+## Requirements and installation
 
-No dotenv loader is used. Set variables in the AI terminal; `.env.example` is an
-optional reference to copy to ignored `.env`. Copying it alone does not set the
-environment. Do not commit real local values; commit only safe templates.
-
-| Variable / option | Purpose / example | Secret? |
-|---|---|---|
-| SMARTPHSET_BACKEND_URL / --backend-url | Spring origin, `http://localhost:9090`; CLI wins; unset disables publishing | No |
-| SMARTPHSET_AI_INGEST_KEY | Match Spring AI_INGEST_KEY, `YOUR_PRIVATE_AI_KEY` | Yes |
-| ROBOFLOW_API_KEY | Required only with hosted provider; `YOUR_PRIVATE_KEY` | Yes |
-| BRIDGE_API_KEY | Photo bridge auth; match frontend API_KEY | Yes |
-| SMARTPHSET_WEIGHTS | Optional bridge weights path; default models/best.pt | No |
-| SMARTPHSET_LOG_DIR | Optional bridge output directory; default bridge_log | No |
-| --cam | Local webcam index, `0` | No |
-| --source | Network MJPEG URL, `http://YOUR_ESP32_CAM_IP:81/stream`; overrides --cam | No |
-| --model-provider | `local` default, or `roboflow` | No |
-| --weights | Live local model file, defaults to models/best.pt beside script | No |
-| --device | Optional inference device, e.g. `cpu` | No |
-| --conf / --imgsz / --fps | Confidence threshold 0.4 / input size 416 / requested inference rate 5 | No |
-| --publish-every | Periodic snapshot interval, 5 seconds; verdict changes also publish | No |
-| --reconnect-delay | Desktop network read retry delay, 2 seconds | No |
-| --serve / --host / --port | Headless HTTP service, 127.0.0.1:8001 by default | No |
-| --roboflow-model-id | Hosted default contamination-detection-ozkwx/1 | No |
-| --roboflow-api-url | Hosted default https://serverless.roboflow.com | No |
-
-The local provider needs no hosted key. Hosted mode sends selected frames to
-Roboflow and may incur usage charges; no silent local fallback occurs. Full option
-help: `python live_camera.py --help` and `python bridge.py --help`.
-
-Camera IDs are derived from input: `--cam 0` → `webcam-0`; a `--source` stream →
-`esp32-cam`. Set frontend SMARTPHSET_AI_CAMERA_ID accordingly for Overview/history.
-The current frontend Live Detection metadata route is hard-coded to webcam-0:
-ESP32 video can work while that panel shows webcam metadata. Verify ESP32 metadata
-via Overview/history or Spring `?camera=esp32-cam` instead.
-
-## Linux setup
-
-One time, with `python` resolving to Python 3.11 (use `python3.11` instead if needed):
+Use Python **3.11**, Git and working camera/network permissions. CPU inference is
+supported. `requirements.txt` pins torch 2.12.1, torchvision 0.27.1, Ultralytics
+8.4.71, NumPy 2.3.5, opencv-python 4.10.0.84 and inference-sdk 1.7.3, with a
+PyTorch CPU extra index. Do not replace the model to solve dependency problems.
 
 ```bash
-python --version
-python -m venv .venv
+# From the existing SmartPhset-AI checkout (remote: smart-phset/phset-ai)
+python3.11 -m venv .venv       # first installation only; preserve an existing venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
 python -m pip check
-# Optional private configuration reference:
-cp .env.example .env
 ```
 
-Existing developer venv was created with uv and may not contain pip. Reuse it;
-do not recreate it. The existing uv install route is documented in
-[docs/live-camera.md](docs/live-camera.md), including its CPU index behavior.
+Windows: `py -3.11 -m venv .venv`, then use
+`.\.venv\Scripts\python.exe` for the commands. An existing uv-created environment
+may lack pip; see [existing installation guidance](docs/live-camera.md).
+Optional tooling: `python -m pip install -r requirements-extra.txt`.
 
-Each session:
+## Configuration and startup
+
+`.env.example` is a safe reference. Python does **not** load dotenv files;
+export values into the service process explicitly. No keys belong in browser JS.
 
 ```bash
 source .venv/bin/activate
-export SMARTPHSET_BACKEND_URL="http://localhost:9090"
-export SMARTPHSET_AI_INGEST_KEY="YOUR_PRIVATE_AI_KEY"
-python live_camera.py --cam 0 --model-provider local --device cpu --conf 0.4 --fps 5 --publish-every 5 --serve --host 127.0.0.1 --port 8001
+export SMARTPHSET_AI_SERVICE_KEY='REPLACE_WITH_A_RANDOM_SECRET_OF_AT_LEAST_32_CHARACTERS'
+export SMARTPHSET_CAMERA_SOURCES='{}'
+python session_service.py
 ```
 
-Replace the key privately with Spring's AI_INGEST_KEY before running. For ESP32-CAM,
-stop the first process and use (replace the camera IP):
+The entry point binds to **127.0.0.1:8002**; it has no host/port CLI options.
+Replace the placeholder privately; use the identical key in Next's server env.
+An empty `SMARTPHSET_CAMERA_SOURCES='{}'` is valid for browser-camera inference.
+A browser-only session does not require a working Spring registry; shared-camera
+listing and authorization do.
+
+| Variable | Default / behavior |
+|---|---|
+| `SMARTPHSET_AI_SERVICE_KEY` | Required, at least 32 characters; bearer service authentication |
+| `SMARTPHSET_CAMERA_SOURCES` | `{}`; JSON map of operator-selected IDs to URL or integer USB index 0–16 |
+| `SMARTPHSET_WEIGHTS` | `models/best.pt` beside the code if blank/unset |
+| `SMARTPHSET_CONFIDENCE` | `0.4`, local detector threshold |
+| `SMARTPHSET_AI_MAX_SESSIONS` | 16; clamped to 1–64 |
+| `OPENCV_IO_MAX_IMAGE_PIXELS` | Set to 921600 if not already set |
+| `SMARTPHSET_BACKEND_URL` | Unset disables publishing; use permitted Spring origin |
+| `SMARTPHSET_AI_INGEST_KEY` | Match Spring `AI_INGEST_KEY`; independent of service key |
+| `BRIDGE_API_KEY` | Separate optional `bridge.py` authentication |
+| `SMARTPHSET_LOG_DIR` | Optional bridge output directory |
+| `ROBOFLOW_API_KEY` | Optional legacy hosted provider; persistent service uses local YOLO |
+
+Shared-camera example, using the actual privately discovered LAN address:
 
 ```bash
-python live_camera.py --source "http://YOUR_ESP32_CAM_IP:81/stream" --model-provider local --device cpu --conf 0.4 --fps 5 --publish-every 5 --serve --host 127.0.0.1 --port 8001
+export SMARTPHSET_CAMERA_SOURCES='{"esp32-cam":"http://CAMERA_LAN_IP:81/stream"}'
+# Optional publishing, shared sources only:
+export SMARTPHSET_BACKEND_URL='http://127.0.0.1:9090'
+export SMARTPHSET_AI_INGEST_KEY='REPLACE_WITH_SPRING_INGEST_KEY'
+python session_service.py
 ```
 
-## Windows setup
+IDs must match Spring `SMARTPHSET_CAMERA_REGISTRY` exactly, e.g.
+`esp32-cam=Grow room`. IDs accept 1–100 letters, digits, `_` and `-`; `browser` is
+reserved. URLs accept HTTP, HTTPS or RTSP; URLs come exclusively from operator
+configuration, never from viewer requests. Keep credentials/private URLs out of Git.
 
-One time: `py --list` shows installed interpreters. If default `py` is 3.11,
-`py -m venv .venv` works; explicitly choosing it avoids using another version:
+## Service contract and verification
 
-```powershell
-py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-python -m pip check
-Copy-Item .env.example .env
-```
+Every request requires `Authorization: Bearer <service key>` and
+`X-Camera-Owner: <64 lowercase hex characters>`. Next derives the owner from a
+verified session cookie. Do not give this credential to users.
 
-If activation is blocked, either use `.\.venv\Scripts\python.exe` directly in
-place of `python`, or permit locally created scripts for **this process**:
+| Request | Behavior |
+|---|---|
+| `GET /sources` | Allowlisted shared-source status; does not open idle cameras |
+| `POST /sessions` with `{"source_id":"browser"}` or shared ID | Create isolated session |
+| `GET /sessions/{id}` | Status/result and heartbeat |
+| `POST /sessions/{id}/start` or `/stop` with `{"revision":1}` | Newer positive revision enables/disables analysis |
+| `POST /sessions/{id}/frames` | Browser-only JPEG; `X-Camera-Revision` must match current revision |
+| `GET /sessions/{id}/stream` | Shared-source MJPEG |
+| `DELETE /sessions/{id}` | Close one session |
+| `DELETE /sessions` | Close this owner's sessions |
 
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
-.\.venv\Scripts\Activate.ps1
-```
-
-Do not change machine-wide security policy. Organization policy may override this;
-using the venv executable directly does not require activation.
-
-Each session (replace the key privately):
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-$env:SMARTPHSET_BACKEND_URL = "http://localhost:9090"
-$env:SMARTPHSET_AI_INGEST_KEY = "YOUR_PRIVATE_AI_KEY"
-python live_camera.py --cam 0 --model-provider local --device cpu --conf 0.4 --fps 5 --publish-every 5 --serve --host 127.0.0.1 --port 8001
-```
-
-For ESP32-CAM, stop that process and select the stream instead:
-
-```powershell
-python live_camera.py --source "http://YOUR_ESP32_CAM_IP:81/stream" --model-provider local --device cpu --conf 0.4 --fps 5 --publish-every 5 --serve --host 127.0.0.1 --port 8001
-```
-
-## Running
-
-The commands above serve live frames without a desktop window. Open
-http://127.0.0.1:8001/health and http://127.0.0.1:8001/stream.mjpg.
-Point frontend SMARTPHSET_AI_LIVE_BASE_URL to http://127.0.0.1:8001.
-Stop with Ctrl+C before selecting another source; only one process can own the port.
-
-For a desktop preview, omit `--serve`. **QT_QPA_PLATFORM=xcb is Linux/X11-specific**;
-it is not needed for the headless service and must not be set on Windows.
-
-Linux/X11 preview:
+JPEG uploads must use `Content-Type: image/jpeg`, be at most **512 KiB**, at most
+1280 on either dimension, and at most 921600 pixels. Sampling is at most 5 fps
+per session. The HTTP server permits 32 concurrent handlers. Sessions expire after
+60 seconds without heartbeat; a reaper checks every 2 seconds. A shared worker is
+closed after its last session expires/closes, with no overlapping capture owner.
+Stop with Ctrl+C/SIGTERM; shutdown waits up to 6 seconds for workers.
 
 ```bash
-QT_QPA_PLATFORM=xcb python live_camera.py --cam 0 --model-provider local --device cpu
-```
-
-Windows preview:
-
-```powershell
-python live_camera.py --cam 0 --model-provider local --device cpu
-```
-
-Press q in the desktop window or Ctrl+C in the terminal to stop.
-
-### Upload Image service (optional, separate terminal)
-
-Activate the same venv in another terminal. Use a separate private bridge key:
-
-```bash
-export BRIDGE_API_KEY="YOUR_PRIVATE_BRIDGE_KEY"
-python bridge.py --host 127.0.0.1 --port 8000
-```
-
-```powershell
-$env:BRIDGE_API_KEY = "YOUR_PRIVATE_BRIDGE_KEY"
-python bridge.py --host 127.0.0.1 --port 8000
-```
-
-Set frontend BACKEND_MODE=bridge, BACKEND_URL=http://127.0.0.1:8000, and API_KEY
-matching BRIDGE_API_KEY; restart Next. This uploads images to `/image`; it does not
-publish live snapshots to Spring. Do not start the bridge on 8001 while live is running.
-
-## Testing
-
-From an activated venv, these work on both platforms:
-
-```text
+# Diagnostic owner only; the frontend normally supplies it.
+owner=$(printf '%064d' 0)
+curl --fail -H "Authorization: Bearer $SMARTPHSET_AI_SERVICE_KEY" \
+  -H "X-Camera-Owner: $owner" http://127.0.0.1:8002/sources
 python -m unittest discover -s tests -v
-python live_camera.py --help
-python tools/evaluate_detector.py --help
 git diff --check
 ```
 
-Tests mock cameras and hosted requests; the opt-in backend integration test needs
-a running configured backend and SMARTPHSET_INTEGRATION_BACKEND_URL (see its test
-file); it writes uniquely named synthetic records. No real hosted key is needed
-for the ordinary suite. Dependency checks are separate from model-quality validation.
+Ordinary tests mock hardware/model calls. The opt-in integration test uses
+`SMARTPHSET_INTEGRATION_BACKEND_URL` and writes synthetic detections; run it only
+against disposable infrastructure. Real model quality and devices need manual acceptance.
+Publishing is best effort, without a durable queue. **Browser frame results are
+returned to Next only**; the persistent service does not publish those to Spring.
+Only shared-worker inference calls `BackendPublisher`.
 
-Linux live checks:
+## Legacy tools
 
-```bash
-curl http://127.0.0.1:8001/health
-curl 'http://localhost:9090/api/ai/detections/latest?camera=webcam-0'
-curl -H "Authorization: Bearer $BRIDGE_API_KEY" http://127.0.0.1:8000/status
-```
+`python live_camera.py --help` lists real options. The legacy process selects one
+`--cam 0` or `--source URL`; `--serve --host 127.0.0.1 --port 8001` provides
+`/health` and `/stream.mjpg`. It captures/infers continuously and is separate from
+the on-demand session service. Avoid running both against the same physical camera.
+Next retains `SMARTPHSET_AI_LIVE_BASE_URL` compatibility for older live routes.
+`bridge.py` handles photo upload separately; see [bridge contract](docs/bridge-api.md).
 
-PowerShell live checks:
+## Troubleshooting and security
 
-```powershell
-Invoke-RestMethod http://127.0.0.1:8001/health
-Invoke-RestMethod 'http://localhost:9090/api/ai/detections/latest?camera=webcam-0'
-Invoke-RestMethod -Headers @{ Authorization = "Bearer $env:BRIDGE_API_KEY" } -Uri http://127.0.0.1:8000/status
-```
+- Model loading: verify Python 3.11, installed pins and readable `models/best.pt`;
+  check [model/evaluation docs](docs/evaluation.md). No claim of model accuracy follows from passing tests.
+- Camera busy: close other owners, legacy scripts and meeting apps; one worker owns each configured shared source.
+- Source unavailable / 503: verify camera power, raw LAN snapshot/stream and worker logs;
+  network read failure retries, but an exited worker may require closing/reopening sessions.
+- 401: service key mismatch or missing/invalid owner. Spring ingestion and registry use different keys.
+- 404: expired/wrong-owner session or ID absent from worker/Spring allowlists.
+- 429: session capacity, sampling limit or shared inference lock; reduce load and retry.
+- 503: model/inference/capture failure or camera still stopping. Never interpret failure as a healthy crop.
+- Keep the listener private. A container's `127.0.0.1` refers to itself; AWS cannot reach this laptop's loopback.
+  Remote inference requires separately reviewed private connectivity and authenticated transport.
 
-Check `streaming: true`, moving frames in the browser, and advancing capture times
-in Spring. Use camera=esp32-cam when testing the network source. Upload a JPEG/PNG
-from `/scan` with bridge mode configured. Camera availability and detection quality
-require real hardware checks; unit tests cannot prove either.
-
-## Common problems
-
-- Webcam in use: close video meetings, browser camera capture and other Python
-  preview processes; select the correct --cam index and enable OS camera permissions.
-- Port 8001 in use: stop the previous service. Linux: `ss -ltnp 'sport = :8001'`.
-  PowerShell: `Get-NetTCPConnection -LocalPort 8001 -State Listen`, then inspect
-  `Get-Process -Id <OwningProcess>` before `Stop-Process -Id <OwningProcess>`.
-- Backend unavailable: video may still work. Check Spring on 9090 and backend URL;
-  failed publishes are dropped, not durably queued. New eligible results resume publishing.
-- Wrong AI ingestion key: Spring returns 401. SMARTPHSET_AI_INGEST_KEY must equal
-  Spring AI_INGEST_KEY; the IoT and bridge keys do not substitute for it.
-- Stale detections: check capture time, camera ID, publishing enablement and key.
-  Camera/inference failure is GREY, never healthy. Current live panel metadata
-  selects webcam-0 even when viewing an ESP32 stream.
-- ESP32 URL unreachable: obtain current board IP from serial/router; use port 81
-  `/stream`, not laptop IP or `/capture`. Verify common network, no client isolation,
-  stable camera power and raw stream in a browser first.
-- Serving mode reports camera_unavailable: restore camera/network and restart
-  Python. Desktop network mode has reconnect behavior; do not assume serving mode
-  automatically recovers every camera failure.
-- Missing model/dependencies: run from the clone root, verify models/best.pt and
-  active Python 3.11. Do not install multiple OpenCV distributions sharing cv2.
-  Preserve pinned versions; inspect pip errors and network/index access first.
-- Linux Qt plugin error in desktop preview: use a working X11/XWayland session
-  and required GUI libraries. Do not copy Linux xcb settings into Windows.
-
-More: [live options/providers](docs/live-camera.md), [MJPEG design](docs/mjpeg-live.md),
-[model card](docs/model-card.md), [evaluation](docs/evaluation.md),
-[photo bridge contract](docs/bridge-api.md).
-
-## Git workflow
-
-Start with a clean worktree (`git status`). Update the branch named in Clone before
-creating your own feature branch. These commands work in Bash and PowerShell:
-
-```text
-git pull --ff-only
-git switch -c feat/my-change
-# Edit and run the checks above.
-git status
-git add README.md
-# Add other intended files explicitly; never add private configuration.
-git diff --cached
-git commit -m "Describe the change"
-git push -u origin feat/my-change
-```
-
-Open a Pull Request against the team's agreed integration branch. Do not push
-teammate changes directly to main. Never use `git push --force` unless the team
-explicitly agrees and understands why. If pull refuses, inspect local changes and
-coordinate; do not discard work with a hard reset.
-
-## Security notes
-
-Never commit `.env`, `.env.local`, private `config.h`, Wi-Fi passwords, API keys,
-DB passwords or auth secrets. Commit only safe example files. Inspect
-`git diff --cached` before each commit; do not force-add ignored files. If a secret
-was committed, rotate it and coordinate cleanup; deleting it does not revoke it.
-
-## Credits and contributing
-
-Hosted model/project: **Contamination Detection** by **Oyster Mushroom Fruiting
-Bag**, [Roboflow Universe](https://universe.roboflow.com/oyster-mushroom-fruiting-bag/contamination-detection-ozkwx),
-project license CC BY 4.0. Published project metrics are not local farm validation.
-Ultralytics licensing is described by its
-[official license page](https://www.ultralytics.com/license); consult the applicable
-terms for your deployment. See [CONTRIBUTING.md](CONTRIBUTING.md) for repository
-conventions and protected files.
+Do not publish camera ports, disable authentication, or commit environments, datasets,
+private images or generated binaries. Review [contribution and licensing rules](CONTRIBUTING.md)
+before making this repository public. Dataset/project attribution: Contamination
+Detection by Oyster Mushroom Fruiting Bag, CC BY 4.0; see the model card. Preserve
+Ultralytics licensing obligations and existing credits.

@@ -36,6 +36,26 @@ class StreamTests(unittest.TestCase):
             consumer.close()
         self.assertFalse(self.state.stopped.is_set())
 
+    def test_slow_viewer_skips_frames_and_disconnect_does_not_stop_peer(self):
+        self.publish()
+        slow, fast = self.state.frames(), self.state.frames()
+        next(slow)
+        next(fast)
+        for _ in range(12):
+            self.publish()
+            self.assertEqual(next(fast), mjpeg_part(self.state.jpeg))
+        self.assertEqual(next(slow), mjpeg_part(self.state.jpeg))
+        slow.close()
+        self.publish()
+        self.assertEqual(next(fast), mjpeg_part(self.state.jpeg))
+        fast.close()
+        self.assertTrue(self.state.health()['streaming'])
+
+    def test_new_viewer_never_receives_stale_frame(self):
+        self.publish()
+        self.state.updated -= 20
+        self.assertEqual(list(self.state.frames()), [])
+
     def test_format_and_health(self):
         self.assertEqual(mjpeg_part(b'jpeg'), b'--frame\r\nContent-Type: image/jpeg\r\nContent-Length: 4\r\n\r\njpeg\r\n')
         self.assertEqual(self.state.health(), dict(status='starting', camera='webcam-0', streaming=False))
@@ -119,3 +139,33 @@ class StreamTests(unittest.TestCase):
         self.assertEqual((args.serve, args.host, args.port), (True, '127.0.0.1', 8001))
         with patch('sys.stderr'), self.assertRaises(SystemExit):
             live.parse_args(['--port', '0'])
+
+class RecoveryTests(unittest.TestCase):
+    def test_network_capture_timeouts_are_set_at_open(self):
+        cv = MagicMock()
+        args = live.parse_args(['--serve', '--source', 'http://camera/stream'])
+        live.open_video_source(cv, args)
+        cv.VideoCapture.assert_called_once_with('http://camera/stream', cv.CAP_FFMPEG, [
+            cv.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000, cv.CAP_PROP_READ_TIMEOUT_MSEC, 5000])
+
+    def test_initially_offline_network_camera_reconnects_with_one_detector(self):
+        cv = MagicMock()
+        camera = cv.VideoCapture.return_value
+        camera.isOpened.side_effect = [False, True]
+        frame = np.zeros((300, 640, 3), dtype=np.uint8)
+        camera.read.side_effect = [(False, None), (True, frame)]
+        state = LatestFrame('esp32-cam')
+        detector = MagicMock()
+        from detectors import DetectionResult
+        detector.detect.return_value = DetectionResult([], 5, '2026-10-28T00:00:00Z', 'local', 'test')
+        def publish(*_args):
+            state.close()
+        with patch.object(live, 'build_detector', return_value=detector) as build, \
+                patch.object(live, 'BackendPublisher'), \
+                patch.object(state, 'publish', side_effect=publish):
+            live.run_camera(live.parse_args(['--serve', '--source', 'http://camera/stream', '--reconnect-delay', '0.001']), cv, stream_state=state)
+        build.assert_called_once()
+        self.assertEqual(cv.VideoCapture.call_count, 2)
+        detector.detect.assert_called_once_with(frame)
+        detector.close.assert_called_once()
+        self.assertEqual(camera.release.call_count, 2)

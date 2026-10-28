@@ -198,4 +198,3 @@ class SessionTests(unittest.TestCase):
         path = '/sessions/' + value['session_id']
         self.assertEqual(call(path, 'DELETE')[0], 200)
         self.assertEqual(call(path)[0], 404)
-
